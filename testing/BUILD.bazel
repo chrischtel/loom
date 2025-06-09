@@ -1,0 +1,106 @@
+# Loom Testing Build Configuration
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+# Test runner infrastructure
+cc_library(
+    name = "test_framework",
+    srcs = [
+        "test_runner.cc",
+        "test_utils.cc",
+    ],
+    hdrs = [
+        "test_runner.h", 
+        "test_utils.h",
+    ],
+    deps = [
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/container:flat_hash_set",
+    ],
+)
+
+# Test runner binary
+cc_binary(
+    name = "test_runner",
+    srcs = ["main_test_runner.cc"],
+    deps = [
+        ":test_framework",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# Compiler unit tests
+cc_test(
+    name = "compiler_tests",
+    srcs = [
+        "compiler/lexer_test.cc",
+        "compiler/parser_test.cc", 
+        "compiler/ast_test.cc",
+        "compiler/semantic_analyzer_test.cc",
+        "compiler/code_generator_test.cc",
+    ],
+    deps = [
+        ":test_framework",
+        "//compiler:compiler_lib",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],
+    size = "small",
+)
+
+# Integration tests for the compiler
+cc_test(
+    name = "compiler_integration_tests",
+    srcs = [
+        "integration/compile_and_run_test.cc",
+        "integration/error_handling_test.cc",
+    ],
+    deps = [
+        ":test_framework",
+        "//compiler:compiler_lib",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],
+    size = "medium",
+    data = [
+        "//examples:example_sources",
+    ],
+)
+
+# Future: Standard library tests (written in Loom)
+# These will test the stdlib functionality once it's implemented
+# loom_test(
+#     name = "stdlib_tests",
+#     srcs = [
+#         "stdlib/core_test.loom",
+#         "stdlib/collections_test.loom", 
+#         "stdlib/io_test.loom",
+#     ],
+#     deps = [
+#         "//stdlib:core",
+#         "//stdlib:collections",
+#     ],
+# )
+
+# For now, placeholder for stdlib tests
+filegroup(
+    name = "stdlib_test_sources",
+    srcs = glob(["stdlib/**/*.loom"]),
+)
+
+# Test data files
+filegroup(
+    name = "test_data",
+    srcs = glob(["data/**/*"]),
+)
+
+# All tests target for convenience
+test_suite(
+    name = "all_tests",
+    tests = [
+        ":compiler_tests",
+        ":compiler_integration_tests",
+    ],
+)

@@ -1,0 +1,62 @@
+# Bazel configuration for Loom project
+
+# Disable Bzlmod to use WORKSPACE
+common --noenable_bzlmod
+common --enable_workspace
+
+# Use C++17 standard
+build --cxxopt=-std=c++17
+build --host_cxxopt=-std=c++17
+
+# Enable optimizations for release builds
+build:release --compilation_mode=opt
+build:release --strip=always
+
+# Debug build configuration
+build:debug --compilation_mode=dbg
+build:debug --copt=-g
+build:debug --copt=-O0
+
+# Fast build for development
+build:fastbuild --compilation_mode=fastbuild
+
+# Address sanitizer
+build:asan --copt=-fsanitize=address
+build:asan --linkopt=-fsanitize=address
+
+# Thread sanitizer
+build:tsan --copt=-fsanitize=thread
+build:tsan --linkopt=-fsanitize=thread
+
+# Memory sanitizer (Linux only)
+build:msan --copt=-fsanitize=memory
+build:msan --linkopt=-fsanitize=memory
+
+# Undefined behavior sanitizer
+build:ubsan --copt=-fsanitize=undefined
+build:ubsan --linkopt=-fsanitize=undefined
+
+# Test configuration
+test --test_output=errors
+test --test_summary=detailed
+
+# Coverage configuration
+coverage --combined_report=lcov
+coverage --coverage_report_generator=@bazel_tools//tools/test:coverage_report_generator
+
+# Windows-specific settings
+build:windows --copt=/std:c++17
+build:windows --host_copt=/std:c++17
+
+# Try to use the system compiler when possible
+build --action_env=CC
+build --action_env=CXX
+
+# Show more verbose failures
+build --verbose_failures
+
+# Keep intermediate files for debugging
+build --keep_going
+
+# Default to fastbuild for development
+build --config=fastbuild

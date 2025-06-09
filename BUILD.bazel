@@ -1,0 +1,22 @@
+# Bazel configuration for Loom
+# https://bazel.build/reference/be/general#package
+
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+
+# Root package - defines the overall build structure
+package(default_visibility = ["//visibility:public"])
+
+# Main compiler binary
+cc_binary(
+    name = "loom-compiler",
+    srcs = ["compiler/main.cc"],
+    deps = [
+        "//compiler:compiler_lib",
+    ],
+)
+
+# Export the compiler as the default target
+alias(
+    name = "loom",
+    actual = ":loom-compiler",
+)

@@ -1,0 +1,63 @@
+# Loom Examples Build Configuration
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+# Example programs written in Loom (compiled via the Loom compiler)
+# For now, these are placeholders until the compiler is ready
+
+# Hello World example
+# loom_binary(
+#     name = "hello_world",
+#     srcs = ["hello_world.loom"],
+#     deps = ["//stdlib:core"],
+# )
+
+# Calculator example  
+# loom_binary(
+#     name = "calculator",
+#     srcs = ["calculator.loom"],
+#     deps = ["//stdlib:core", "//stdlib:collections"],
+# )
+
+# Fibonacci example
+# loom_binary(
+#     name = "fibonacci", 
+#     srcs = ["fibonacci.loom"],
+#     deps = ["//stdlib:core"],
+# )
+
+# File I/O example
+# loom_binary(
+#     name = "file_io",
+#     srcs = ["file_io.loom"],
+#     deps = ["//stdlib:core"],
+# )
+
+# For now, collect all example source files
+filegroup(
+    name = "example_sources",
+    srcs = glob(["**/*.loom"]) + [
+        "README.md",
+    ],
+)
+
+# Placeholder targets that will be replaced when the compiler is ready
+# These demonstrate the intended structure
+genrule(
+    name = "hello_world_placeholder",
+    outs = ["hello_world_placeholder.txt"],
+    cmd = "echo 'Hello World example placeholder' > $@",
+)
+
+genrule(
+    name = "calculator_placeholder", 
+    outs = ["calculator_placeholder.txt"],
+    cmd = "echo 'Calculator example placeholder' > $@",
+)
+
+genrule(
+    name = "fibonacci_placeholder",
+    outs = ["fibonacci_placeholder.txt"], 
+    cmd = "echo 'Fibonacci example placeholder' > $@",
+)

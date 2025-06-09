@@ -18,3 +18,17 @@ dist/
 *.orig
 *.class
 *.jar
+
+# Bazel build artifacts
+bazel-*
+.bazel-cache/
+bazel-out/
+bazel-bin/
+bazel-testlogs/
+.bazelrc.user
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+.vs/
