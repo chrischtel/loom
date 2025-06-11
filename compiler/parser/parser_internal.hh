@@ -32,6 +32,9 @@ class Parser {
   std::unique_ptr<StmtNode> parseLetDeclaration(bool is_mutable);
   std::unique_ptr<StmtNode> parseExpressionStatement();
   std::unique_ptr<ExprNode> parseExpression();
+  std::unique_ptr<ExprNode> parseAssignment();
+  std::unique_ptr<ExprNode> parseTerm();
+  std::unique_ptr<ExprNode> parseFactor();
   std::unique_ptr<ExprNode> parsePrimary();
 
  public:

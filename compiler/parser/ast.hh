@@ -54,6 +54,39 @@ class Identifier : public ExprNode {
   std::string toString() const override { return "Identifier(" + name + ")"; }
 };
 
+class AssignmentExpr : public ExprNode {
+ public:
+  std::string name;
+  std::unique_ptr<ExprNode> value;
+  AssignmentExpr(const LoomSourceLocation& loc, const std::string& name,
+                 std::unique_ptr<ExprNode> value)
+      : ExprNode(loc), name(name), value(std::move(value)) {}
+
+  std::string toString() const override {
+    return "Assignment(" + name + " = " +
+           (value ? value->toString() : "nulll") + ")";
+  }
+};
+
+class BinaryExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> left;
+  LoomToken op;
+  std::unique_ptr<ExprNode> right;
+
+  BinaryExpr(std::unique_ptr<ExprNode> left, const LoomToken& op,
+             std::unique_ptr<ExprNode> right)
+      : ExprNode(left->location),
+        left(std::move(left)),
+        op(op),
+        right(std::move(right)) {}
+
+  std::string toString() const override {
+    return "Binary(" + (left ? left->toString() : "null") + " " + op.value +
+           " " + (right ? right->toString() : "null") + ")";
+  }
+};
+
 class StringLiteral : public ExprNode {
  public:
   std::string name;

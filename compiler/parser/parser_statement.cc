@@ -5,6 +5,9 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
   try {
     if (match(TokenType::TOKEN_KEYWORD_LET)) return parseLetDeclaration(false);
     if (match(TokenType::TOKEN_KEYWORD_MUT)) return parseLetDeclaration(true);
+    if (match(TokenType::TOKEN_KEYWORD_DEFINE))
+      return parseLetDeclaration(false);
+
     return parseExpressionStatement();
   } catch (const ParseError&) {
     synchronize();
