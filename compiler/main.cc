@@ -6,7 +6,7 @@
 int main() {
   // 1. Unser Beispiel-Quellcode. Er enthält Leerzeichen und einen
   // Zeilenumbruch.
-  const char *source_code = "\n\n ddwd";
+  const char *source_code = "\n\n 4.343";
   std::cout << "Scanning source code: \"\\n  \"" << std::endl;
   std::cout << "--------------------------------" << std::endl;
 

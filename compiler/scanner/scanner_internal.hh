@@ -8,7 +8,8 @@ enum class TokenType {
   TOKEN_WHITESPACE,
   TOKEN_NEWLINE,
   TOKEN_EOF,
-
+  TOKEN_NUMBER_INT,
+  TOKEN_NUMBER_FLOAT,
   TOKEN_ERROR
 };
 
@@ -68,4 +69,6 @@ private:
   LoomSourceLocation getCurrentLocation();
   LoomToken makeToken(TokenType type);
   LoomToken makeErrorToken(const std::string &message, char offending_char);
+
+  LoomToken scanNumbers();
 };

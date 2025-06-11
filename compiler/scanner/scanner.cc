@@ -78,6 +78,26 @@ LoomToken Scanner::makeErrorToken(const std::string &message,
   return LoomToken(TokenType::TOKEN_ERROR, loc, error_message);
 }
 
+LoomToken Scanner::scanNumbers() {
+  // TODO: Check for different bases, e.g. 0x, 0b, 0o
+
+  while (isdigit(peek())) {
+    advance();
+  }
+
+  if (peek() == '.' && isdigit(peek_next())) {
+    advance();
+
+    while (isdigit(peek())) {
+      advance();
+    }
+
+    return makeToken(TokenType::TOKEN_NUMBER_FLOAT);
+  }
+
+  return makeToken(TokenType::TOKEN_NUMBER_INT);
+}
+
 LoomToken Scanner::scanNextToken() {
   skipWhitespace();
   start_offset = current_offset; // WICHTIG: Start des Tokens markieren!
@@ -87,6 +107,10 @@ LoomToken Scanner::scanNextToken() {
   }
 
   char c = advance();
+
+  if (isdigit(c)) {
+    return scanNumbers();
+  }
 
   switch (c) {
 
@@ -98,9 +122,12 @@ LoomToken Scanner::scanNextToken() {
     current_line_offset = current_offset;
     return token;
   }
+
   default:
 
-    return makeErrorToken("Unexpected character", c);
+    return makeErrorToken("Unexpected character",
+                          c); // PROBLEM, DOESNT ALLOW THE SCANNER to advance to
+                              // isdigit part, how do I fux this?
   }
 }
 
@@ -110,6 +137,10 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
     return "TOKEN_NEWLINE";
   case TokenType::TOKEN_EOF:
     return "TOKEN_EOF";
+  case TokenType::TOKEN_NUMBER_INT:
+    return "TOKEN_NUMBER_INT";
+  case TokenType::TOKEN_NUMBER_FLOAT:
+    return "TOKEN_NUMBER_FLOAT";
   default:
     return "TOKEN_UNKNOWN";
   }
