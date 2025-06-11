@@ -8,13 +8,20 @@ enum class TokenType {
   TOKEN_WHITESPACE,
   TOKEN_NEWLINE,
   TOKEN_EOF,
+  // 1-char tokens
+  TOKEN_SEMICOLON,
+  TOKEN_COLON,
+  TOKEN_EQUAL,
+  TOKEN_EQUAL_EQUAL,
   // Literals
   TOKEN_NUMBER_INT,
   TOKEN_NUMBER_FLOAT,
   // Identifiers
   TOKEN_IDENTIFIER,
   // Keywords
-  TOKEN_KEYWORD_LET,
+  TOKEN_KEYWORD_LET,     // unmutable variabiable declaration
+  TOKEN_KEYWORD_MUT,     // mutable variabiable declaration
+  TOKEN_KEYWORD_DEFINE,  // compile time known constant declaration
 
   // Specials
   TOKEN_ERROR
@@ -73,6 +80,8 @@ class Scanner {
   char peek();
   char peek_next();
   void skipWhitespace();
+  bool match(char expected);
+
   LoomSourceLocation getCurrentLocation();
 
   LoomToken makeToken(TokenType type);

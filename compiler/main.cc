@@ -7,7 +7,7 @@
 int main() {
   // 1. Unser Beispiel-Quellcode. Er enthält Leerzeichen und einen
   // Zeilenumbruch.
-  const char *source_code = "\n\n 4.343 let myvar = 7647; ";
+  const char *source_code = "\n\n 4.343 let myvar = 7647; define PI = 3.141";
   std::cout << "Scanning source code: \"\\n  \"" << std::endl;
   std::cout << "--------------------------------" << std::endl;
 

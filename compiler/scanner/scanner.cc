@@ -2,6 +2,12 @@
 
 #include "scanner_internal.hh"
 
+static const std::unordered_map<std::string_view, TokenType> keywords = {
+    {"let", TokenType::TOKEN_KEYWORD_LET},
+    {"mut", TokenType::TOKEN_KEYWORD_MUT},
+    {"define", TokenType::TOKEN_KEYWORD_DEFINE},
+};
+
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
 
 char Scanner::advance() {
@@ -15,6 +21,15 @@ char Scanner::advance() {
   current_column++;
 
   return temp_char;
+}
+
+bool Scanner::match(char expected) {
+  if (isAtEnd()) return false;
+
+  if (peek() != expected) return false;
+
+  advance();
+  return true;
 }
 
 char Scanner::peek() {
@@ -69,7 +84,7 @@ LoomToken Scanner::makeToken(TokenType type) {
   return LoomToken(type, loc, std::string(token_text));
 }
 
-LoomToken Scanner::makeErrorToken(const std::string &message,
+LoomToken Scanner::makeErrorToken(const std::string& message,
                                   char offending_char) {
   LoomSourceLocation loc(filename, current_line, current_column - 1,
                          current_offset - 1);
@@ -106,10 +121,6 @@ LoomToken Scanner::scanIdentifier() {
 
   std::string_view tmp_ident =
       source_buffer.substr(start_offset, current_offset - start_offset);
-  static const std::unordered_map<std::string_view, TokenType> keywords = {
-      {"let", TokenType::TOKEN_KEYWORD_LET},
-
-  };
 
   auto it = keywords.find(tmp_ident);
 
@@ -125,7 +136,7 @@ LoomToken Scanner::scanNextToken() {
   start_offset = current_offset;
 
   if (isAtEnd()) {
-    return makeToken(TokenType::TOKEN_EOF);  // So einfach ist das!
+    return makeToken(TokenType::TOKEN_EOF);
   }
 
   char c = advance();
@@ -143,12 +154,14 @@ LoomToken Scanner::scanNextToken() {
       current_line_offset = current_offset;
       return token;
     }
-
+    case '=':
+      return (makeToken(match('=') ? TokenType::TOKEN_EQUAL_EQUAL
+                                   : TokenType::TOKEN_EQUAL));
+    case ';':
+      return makeToken(TokenType::TOKEN_SEMICOLON);
     default:
 
-      return makeErrorToken("Unexpected character",
-                            c);  // PROBLEM, DOESNT ALLOW THE SCANNER to advance
-                                 // to isdigit part, how do I fux this?
+      return makeErrorToken("Unexpected character", c);
   }
 }
 
@@ -162,10 +175,18 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_NUMBER_INT";
     case TokenType::TOKEN_NUMBER_FLOAT:
       return "TOKEN_NUMBER_FLOAT";
+    case TokenType::TOKEN_IDENTIFIER:
+      return "TOKEN_IDENTIFIER";
     case TokenType::TOKEN_KEYWORD_LET:
       return "TOKEN_KEYWORD_LET";
-    case TokenType::TOKEN_IDENTIFIER:
-      return "TOKEN_KEYWORD_IDENTIFIER";
+    case TokenType::TOKEN_KEYWORD_MUT:
+      return "TOKEN_KEYWORD_MUT";
+    case TokenType::TOKEN_KEYWORD_DEFINE:
+      return "TOKEN_KEYWORD_DEFINE";
+    case TokenType::TOKEN_SEMICOLON:
+      return "TOKEN_SEMICOLON";
+    case TokenType::TOKEN_EQUAL:
+      return "TOKEN_EQUAL";
     default:
       return "TOKEN_UNKNOWN";
   }
