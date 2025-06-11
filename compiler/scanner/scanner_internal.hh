@@ -56,5 +56,5 @@ public:
 
 private:
   bool isAtEnd();
-  void advance();
+  char advance();
 };
