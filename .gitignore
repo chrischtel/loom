@@ -18,6 +18,7 @@ dist/
 *.orig
 *.class
 *.jar
+build_release/
 
 # Bazel build artifacts
 bazel-*

@@ -2,10 +2,10 @@
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
-    std::cerr << "Usage: loom <source_file>\n";
+    std::cerr << "Usage: " << argv[0] << " <source_file>\n";
     return 1;
   }
 
-  std::cout << "Compilationddw successful!\n";
+  std::cout << "Compilation successful!\n";
   return 0;
 }

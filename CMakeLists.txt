@@ -73,7 +73,8 @@ endif()
 # Project options
 option(LOOM_BUILD_TESTING "Build and run tests" ON)
 option(LOOM_BUILD_EXAMPLES "Build examples" ON)
-option(LOOM_USE_SANITIZERS "Enable sanitizers in debug builds" ON)
+option(LOOM_USE_SANITIZERS "Enable sanitizers in debug builds (Linux/macOS only)" ON)
+option(LOOM_FORCE_DISABLE_SANITIZERS "Force disable sanitizers on all platforms" OFF)
 option(LOOM_USE_LLVM "Enable LLVM support" OFF)
 option(LOOM_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
 
@@ -114,9 +115,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(LOOM_COMPILER "GCC")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    if(CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+    # Check if we're using clang-cl or regular clang
+    get_filename_component(COMPILER_NAME ${CMAKE_CXX_COMPILER} NAME_WE)
+    if(COMPILER_NAME STREQUAL "clang-cl")
         set(LOOM_COMPILER "Clang-cl")
     else()
+        # Force it to be regular Clang even on Windows if we're using clang++
         set(LOOM_COMPILER "Clang")
     endif()
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
@@ -124,6 +128,11 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 else()
     set(LOOM_COMPILER "Unknown")
 endif()
+
+message(STATUS "Detected compiler ID: ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "Compiler simulate ID: ${CMAKE_CXX_SIMULATE_ID}")
+message(STATUS "Compiler executable: ${CMAKE_CXX_COMPILER}")
+message(STATUS "Loom compiler type: ${LOOM_COMPILER}")
 
 # Additional Clang-specific configurations
 if(LOOM_COMPILER STREQUAL "Clang" OR LOOM_COMPILER STREQUAL "Apple Clang")
@@ -193,8 +202,13 @@ endfunction()
 
 # Sanitizers function
 function(loom_enable_sanitizers target)
+    if(LOOM_FORCE_DISABLE_SANITIZERS)
+        message(STATUS "Sanitizers force-disabled for ${target}")
+        return()
+    endif()
+    
     if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND LOOM_USE_SANITIZERS)
-        if(LOOM_COMPILER STREQUAL "GCC" OR LOOM_COMPILER STREQUAL "Clang" OR LOOM_COMPILER STREQUAL "Apple Clang")
+        if(LOOM_COMPILER STREQUAL "GCC")
             target_compile_options(${target} PRIVATE
                 -fsanitize=address
                 -fsanitize=undefined
@@ -204,10 +218,49 @@ function(loom_enable_sanitizers target)
                 -fsanitize=address
                 -fsanitize=undefined
             )
-            message(STATUS "Sanitizers enabled for ${target}")
+            message(STATUS "Sanitizers (ASan + UBSan) enabled for ${target}")
+        elseif(LOOM_COMPILER STREQUAL "Clang" OR LOOM_COMPILER STREQUAL "Apple Clang")
+            if(WIN32)
+                # On Windows with Clang, sanitizers have compatibility issues with MSVC runtime
+                # For now, disable sanitizers and rely on static analysis and other tools
+                message(STATUS "Sanitizers disabled for ${target} on Windows due to runtime compatibility issues")
+                message(STATUS "Consider using: clang-tidy, clang static analyzer, or external tools like Dr. Memory")
+            else()
+                # On Unix systems, both ASan and UBSan work well with Clang
+                target_compile_options(${target} PRIVATE
+                    -fsanitize=address
+                    -fsanitize=undefined
+                    -fno-omit-frame-pointer
+                )
+                target_link_options(${target} PRIVATE
+                    -fsanitize=address
+                    -fsanitize=undefined
+                )
+                message(STATUS "Sanitizers (ASan + UBSan) enabled for ${target}")
+            endif()
         endif()
     endif()
 endfunction()
+
+# Additional developer tools configuration
+if(WIN32 AND LOOM_COMPILER STREQUAL "Clang")
+    # Add compile commands for clang-tidy
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+    
+    # Optional: Add custom target for running clang-tidy
+    find_program(CLANG_TIDY_EXE NAMES "clang-tidy" DOC "Path to clang-tidy executable")
+    if(CLANG_TIDY_EXE)
+        message(STATUS "Found clang-tidy: ${CLANG_TIDY_EXE}")
+        message(STATUS "You can run static analysis with: clang-tidy compiler/*.cc")
+    endif()
+    
+    # Optional: Add custom target for running clang static analyzer
+    find_program(CLANG_CHECK_EXE NAMES "clang-check" DOC "Path to clang-check executable")
+    if(CLANG_CHECK_EXE)
+        message(STATUS "Found clang-check: ${CLANG_CHECK_EXE}")
+        message(STATUS "You can run static analysis with: clang-check -analyze compiler/*.cc")
+    endif()
+endif()
 
 # Main subdirectories
 add_subdirectory(compiler)
