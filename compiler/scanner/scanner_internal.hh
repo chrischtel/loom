@@ -15,11 +15,22 @@ enum class TokenType {
   TOKEN_EQUAL,
   TOKEN_EQUAL_EQUAL,
   TOKEN_SLASH,
+  TOKEN_PLUS,
+  TOKEN_MINUS,
+  TOKEN_STAR,
+  TOKEN_LEFT_PAREN,
+  TOKEN_RIGHT_PAREN,
+  TOKEN_LEFT_BRACE,
+  TOKEN_RIGHT_BRACE,
+
   // Literals
   TOKEN_NUMBER_INT,
   TOKEN_NUMBER_FLOAT,
+  TOKEN_STRING,
+
   // Identifiers
   TOKEN_IDENTIFIER,
+
   // Keywords
   TOKEN_KEYWORD_LET,     // unmutable variabiable declaration
   TOKEN_KEYWORD_MUT,     // mutable variabiable declaration
@@ -88,7 +99,7 @@ class Scanner {
 
   LoomToken makeToken(TokenType type);
   LoomToken makeErrorToken(const std::string &message, char offending_char);
-
   LoomToken scanNumber();
   LoomToken scanIdentifier();
+  LoomToken scanString();
 };

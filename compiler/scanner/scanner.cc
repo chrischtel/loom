@@ -131,6 +131,27 @@ LoomToken Scanner::scanIdentifier() {
   return makeToken(TokenType::TOKEN_IDENTIFIER);
 }
 
+LoomToken Scanner::scanString() {
+  // Der öffnende " wurde bereits verbraucht
+  while (peek() != '"' && !isAtEnd()) {
+    if (peek() == '\n') {
+      current_line++;
+      current_column = 1;
+      current_line_offset = current_offset;
+    }
+    advance();
+  }
+
+  if (isAtEnd()) {
+    return makeErrorToken("Unterminated string", '"');
+  }
+
+  // Schließende " verbrauchen
+  advance();
+
+  return makeToken(TokenType::TOKEN_STRING);
+}
+
 LoomToken Scanner::scanNextToken() {
   skipWhitespace();
   start_offset = current_offset;
@@ -144,7 +165,6 @@ LoomToken Scanner::scanNextToken() {
   if (isdigit(c)) return scanNumber();
 
   if (isalpha(c)) return scanIdentifier();
-
   switch (c) {
     case '\n': {
       LoomToken token = makeToken(TokenType::TOKEN_NEWLINE);
@@ -159,17 +179,38 @@ LoomToken Scanner::scanNextToken() {
                                    : TokenType::TOKEN_EQUAL));
     case ';':
       return makeToken(TokenType::TOKEN_SEMICOLON);
+    case ':':
+      return makeToken(TokenType::TOKEN_COLON);
+    case '+':
+      return makeToken(TokenType::TOKEN_PLUS);
+    case '-':
+      return makeToken(TokenType::TOKEN_MINUS);
+    case '*':
+      return makeToken(TokenType::TOKEN_STAR);
+    case '(':
+      return makeToken(TokenType::TOKEN_LEFT_PAREN);
+    case ')':
+      return makeToken(TokenType::TOKEN_RIGHT_PAREN);
+    case '{':
+      return makeToken(TokenType::TOKEN_LEFT_BRACE);
+    case '}':
+      return makeToken(TokenType::TOKEN_RIGHT_BRACE);
+    case '"':
+      return scanString();
 
     case '/':
       if (match('/')) {
-        while (peek() != '\n' && !isAtEnd()) advance();
-
+        // Kommentar bis zum Zeilenende überspringen
+        while (peek() != '\n' && !isAtEnd()) {
+          advance();
+        }
+        // Rekursiv nächstes Token scannen (Kommentar überspringen)
         return scanNextToken();
       } else {
         return makeToken(TokenType::TOKEN_SLASH);
       }
-    default:
 
+    default:
       return makeErrorToken("Unexpected character", c);
   }
 }
@@ -184,6 +225,8 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_NUMBER_INT";
     case TokenType::TOKEN_NUMBER_FLOAT:
       return "TOKEN_NUMBER_FLOAT";
+    case TokenType::TOKEN_STRING:
+      return "TOKEN_STRING";
     case TokenType::TOKEN_IDENTIFIER:
       return "TOKEN_IDENTIFIER";
     case TokenType::TOKEN_KEYWORD_LET:
@@ -194,8 +237,30 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_DEFINE";
     case TokenType::TOKEN_SEMICOLON:
       return "TOKEN_SEMICOLON";
+    case TokenType::TOKEN_COLON:
+      return "TOKEN_COLON";
     case TokenType::TOKEN_EQUAL:
       return "TOKEN_EQUAL";
+    case TokenType::TOKEN_EQUAL_EQUAL:
+      return "TOKEN_EQUAL_EQUAL";
+    case TokenType::TOKEN_SLASH:
+      return "TOKEN_SLASH";
+    case TokenType::TOKEN_PLUS:
+      return "TOKEN_PLUS";
+    case TokenType::TOKEN_MINUS:
+      return "TOKEN_MINUS";
+    case TokenType::TOKEN_STAR:
+      return "TOKEN_STAR";
+    case TokenType::TOKEN_LEFT_PAREN:
+      return "TOKEN_LEFT_PAREN";
+    case TokenType::TOKEN_RIGHT_PAREN:
+      return "TOKEN_RIGHT_PAREN";
+    case TokenType::TOKEN_LEFT_BRACE:
+      return "TOKEN_LEFT_BRACE";
+    case TokenType::TOKEN_RIGHT_BRACE:
+      return "TOKEN_RIGHT_BRACE";
+    case TokenType::TOKEN_ERROR:
+      return "TOKEN_ERROR";
     default:
       return "TOKEN_UNKNOWN";
   }
