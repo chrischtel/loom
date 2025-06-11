@@ -60,4 +60,5 @@ private:
   char advance();
   char peek();
   char peek_next();
+  void skipWhitespace();
 };

@@ -6,6 +6,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  std::string value = "";
+
   std::cout << "Compilation successful!\n";
   return 0;
 }

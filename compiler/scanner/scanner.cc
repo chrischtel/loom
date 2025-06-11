@@ -30,6 +30,21 @@ char Scanner::peek_next() {
   return source_buffer[current_offset + 1];
 }
 
+void Scanner::skipWhitespace() {
+  while (!isAtEnd()) {
+    switch (peek()) {
+    case ' ':
+    case '\r':
+    case '\t':
+      advance();
+    case '\n':
+      break;
+    default:
+      return;
+    }
+  }
+}
+
 Scanner::Scanner(std::string_view source, std::string_view filename_)
     : filename(filename_), source_buffer(source), current_offset(0),
       current_line(1), current_column(1), current_line_offset(0) {}
