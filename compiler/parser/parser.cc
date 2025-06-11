@@ -66,8 +66,10 @@ void Parser::synchronize() {
 std::vector<std::unique_ptr<StmtNode>> Parser::parse() {
   std::vector<std::unique_ptr<StmtNode>> statements;
   while (!isAtEnd()) {
-    // parseDeclaration() gibt nullptr zurück, wenn ein Fehler auftrat und
-    // synchronisiert wurde. Wir fügen diese nicht zum AST hinzu.
+    if (match(TokenType::TOKEN_NEWLINE)) {
+      continue;
+    }
+
     auto decl = parseDeclaration();
     if (decl) {
       statements.push_back(std::move(decl));

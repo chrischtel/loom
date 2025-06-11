@@ -54,6 +54,18 @@ class Identifier : public ExprNode {
   std::string toString() const override { return "Identifier(" + name + ")"; }
 };
 
+class StringLiteral : public ExprNode {
+ public:
+  std::string name;
+
+  StringLiteral(const LoomSourceLocation& loc, const std::string& id_name)
+      : ExprNode(loc), name(id_name) {}
+
+  std::string toString() const override {
+    return "StringLiteral(" + name + ")";
+  }
+};
+
 // --- Konkrete Statement-Knoten ---
 class VarDeclNode : public StmtNode {
  public:

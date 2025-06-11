@@ -20,6 +20,10 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
     const LoomToken& token = previous();
     return std::make_unique<Identifier>(token.location, token.value);
   }
+  if (match(TokenType::TOKEN_STRING)) {
+    const LoomToken& token = previous();
+    return std::make_unique<StringLiteral>(token.location, token.value);
+  }
 
   error(peek(), "Expected expression");
   return nullptr;
