@@ -8,8 +8,15 @@ enum class TokenType {
   TOKEN_WHITESPACE,
   TOKEN_NEWLINE,
   TOKEN_EOF,
+  // Literals
   TOKEN_NUMBER_INT,
   TOKEN_NUMBER_FLOAT,
+  // Identifiers
+  TOKEN_IDENTIFIER,
+  // Keywords
+  TOKEN_KEYWORD_LET,
+
+  // Specials
   TOKEN_ERROR
 };
 
@@ -67,8 +74,10 @@ class Scanner {
   char peek_next();
   void skipWhitespace();
   LoomSourceLocation getCurrentLocation();
+
   LoomToken makeToken(TokenType type);
   LoomToken makeErrorToken(const std::string &message, char offending_char);
 
-  LoomToken scanNumbers();
+  LoomToken scanNumber();
+  LoomToken scanIdentifier();
 };

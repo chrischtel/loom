@@ -1,12 +1,13 @@
 // main.cc
 
-#include "scanner/scanner_internal.hh" // Passe den Pfad ggf. an
 #include <iostream>
+
+#include "scanner/scanner_internal.hh"  // Passe den Pfad ggf. an
 
 int main() {
   // 1. Unser Beispiel-Quellcode. Er enthält Leerzeichen und einen
   // Zeilenumbruch.
-  const char *source_code = "\n\n 4.343";
+  const char *source_code = "\n\n 4.343 let myvar = 7647; ";
   std::cout << "Scanning source code: \"\\n  \"" << std::endl;
   std::cout << "--------------------------------" << std::endl;
 
@@ -26,7 +27,7 @@ int main() {
     // 5. Die Abbruchbedingung
     if (token.type == TokenType::TOKEN_EOF ||
         token.type == TokenType::TOKEN_ERROR) {
-      break; // Verlasse die Schleife bei EOF ODER bei einem Fehler
+      break;  // Verlasse die Schleife bei EOF ODER bei einem Fehler
     }
   }
 

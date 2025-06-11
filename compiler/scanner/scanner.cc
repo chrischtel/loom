@@ -1,3 +1,5 @@
+#include <unordered_map>
+
 #include "scanner_internal.hh"
 
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
@@ -77,7 +79,7 @@ LoomToken Scanner::makeErrorToken(const std::string &message,
   return LoomToken(TokenType::TOKEN_ERROR, loc, error_message);
 }
 
-LoomToken Scanner::scanNumbers() {
+LoomToken Scanner::scanNumber() {
   // TODO: Check for different bases, e.g. 0x, 0b, 0o
 
   while (isdigit(peek())) {
@@ -97,9 +99,30 @@ LoomToken Scanner::scanNumbers() {
   return makeToken(TokenType::TOKEN_NUMBER_INT);
 }
 
+LoomToken Scanner::scanIdentifier() {
+  while (isalnum(peek()) || peek() == '_') {
+    advance();
+  }
+
+  std::string_view tmp_ident =
+      source_buffer.substr(start_offset, current_offset - start_offset);
+  static const std::unordered_map<std::string_view, TokenType> keywords = {
+      {"let", TokenType::TOKEN_KEYWORD_LET},
+
+  };
+
+  auto it = keywords.find(tmp_ident);
+
+  if (it != keywords.end()) {
+    return makeToken(it->second);
+  }
+
+  return makeToken(TokenType::TOKEN_IDENTIFIER);
+}
+
 LoomToken Scanner::scanNextToken() {
   skipWhitespace();
-  start_offset = current_offset;  // WICHTIG: Start des Tokens markieren!
+  start_offset = current_offset;
 
   if (isAtEnd()) {
     return makeToken(TokenType::TOKEN_EOF);  // So einfach ist das!
@@ -107,9 +130,9 @@ LoomToken Scanner::scanNextToken() {
 
   char c = advance();
 
-  if (isdigit(c)) {
-    return scanNumbers();
-  }
+  if (isdigit(c)) return scanNumber();
+
+  if (isalpha(c)) return scanIdentifier();
 
   switch (c) {
     case '\n': {
@@ -139,6 +162,10 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_NUMBER_INT";
     case TokenType::TOKEN_NUMBER_FLOAT:
       return "TOKEN_NUMBER_FLOAT";
+    case TokenType::TOKEN_KEYWORD_LET:
+      return "TOKEN_KEYWORD_LET";
+    case TokenType::TOKEN_IDENTIFIER:
+      return "TOKEN_KEYWORD_IDENTIFIER";
     default:
       return "TOKEN_UNKNOWN";
   }
