@@ -3,8 +3,7 @@
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
 
 char Scanner::advance() {
-  if (isAtEnd())
-    return '\0';
+  if (isAtEnd()) return '\0';
 
   char temp_char;
 
@@ -17,15 +16,13 @@ char Scanner::advance() {
 }
 
 char Scanner::peek() {
-  if (isAtEnd())
-    return '\0';
+  if (isAtEnd()) return '\0';
 
   return source_buffer[current_offset];
 }
 
 char Scanner::peek_next() {
-  if (current_offset + 1 >= source_buffer.size())
-    return '\0';
+  if (current_offset + 1 >= source_buffer.size()) return '\0';
 
   return source_buffer[current_offset + 1];
 }
@@ -33,25 +30,28 @@ char Scanner::peek_next() {
 void Scanner::skipWhitespace() {
   while (!isAtEnd()) {
     switch (peek()) {
-    case ' ':
-    case '\r':
-    case '\t':
-      advance();
-      break;
-    case '\n':
-      return;
-    default:
-      return;
+      case ' ':
+      case '\r':
+      case '\t':
+        advance();
+        break;
+      case '\n':
+        return;
+      default:
+        return;
     }
   }
 }
 
 Scanner::Scanner(std::string_view source, std::string_view filename_)
-    : filename(filename_), source_buffer(source), current_offset(0),
-      current_line(1), current_column(1), current_line_offset(0) {}
+    : filename(filename_),
+      source_buffer(source),
+      current_offset(0),
+      current_line(1),
+      current_column(1),
+      current_line_offset(0) {}
 
 LoomSourceLocation Scanner::getCurrentLocation() {
-
   return LoomSourceLocation(filename, current_line, current_column,
                             current_offset);
 }
@@ -69,7 +69,6 @@ LoomToken Scanner::makeToken(TokenType type) {
 
 LoomToken Scanner::makeErrorToken(const std::string &message,
                                   char offending_char) {
-
   LoomSourceLocation loc(filename, current_line, current_column - 1,
                          current_offset - 1);
 
@@ -100,10 +99,10 @@ LoomToken Scanner::scanNumbers() {
 
 LoomToken Scanner::scanNextToken() {
   skipWhitespace();
-  start_offset = current_offset; // WICHTIG: Start des Tokens markieren!
+  start_offset = current_offset;  // WICHTIG: Start des Tokens markieren!
 
   if (isAtEnd()) {
-    return makeToken(TokenType::TOKEN_EOF); // So einfach ist das!
+    return makeToken(TokenType::TOKEN_EOF);  // So einfach ist das!
   }
 
   char c = advance();
@@ -113,35 +112,34 @@ LoomToken Scanner::scanNextToken() {
   }
 
   switch (c) {
+    case '\n': {
+      LoomToken token = makeToken(TokenType::TOKEN_NEWLINE);
 
-  case '\n': {
-    LoomToken token = makeToken(TokenType::TOKEN_NEWLINE);
+      current_line++;
+      current_column = 1;
+      current_line_offset = current_offset;
+      return token;
+    }
 
-    current_line++;
-    current_column = 1;
-    current_line_offset = current_offset;
-    return token;
-  }
+    default:
 
-  default:
-
-    return makeErrorToken("Unexpected character",
-                          c); // PROBLEM, DOESNT ALLOW THE SCANNER to advance to
-                              // isdigit part, how do I fux this?
+      return makeErrorToken("Unexpected character",
+                            c);  // PROBLEM, DOESNT ALLOW THE SCANNER to advance
+                                 // to isdigit part, how do I fux this?
   }
 }
 
 std::string Scanner::loom_toke_type_to_string(TokenType type) {
   switch (type) {
-  case TokenType::TOKEN_NEWLINE:
-    return "TOKEN_NEWLINE";
-  case TokenType::TOKEN_EOF:
-    return "TOKEN_EOF";
-  case TokenType::TOKEN_NUMBER_INT:
-    return "TOKEN_NUMBER_INT";
-  case TokenType::TOKEN_NUMBER_FLOAT:
-    return "TOKEN_NUMBER_FLOAT";
-  default:
-    return "TOKEN_UNKNOWN";
+    case TokenType::TOKEN_NEWLINE:
+      return "TOKEN_NEWLINE";
+    case TokenType::TOKEN_EOF:
+      return "TOKEN_EOF";
+    case TokenType::TOKEN_NUMBER_INT:
+      return "TOKEN_NUMBER_INT";
+    case TokenType::TOKEN_NUMBER_FLOAT:
+      return "TOKEN_NUMBER_FLOAT";
+    default:
+      return "TOKEN_UNKNOWN";
   }
 }

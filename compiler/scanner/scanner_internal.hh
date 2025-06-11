@@ -39,7 +39,7 @@ struct LoomToken {
 };
 
 class Scanner {
-private:
+ private:
   std::string_view filename;
   std::string_view source_buffer;
 
@@ -50,7 +50,7 @@ private:
   size_t current_column;
   size_t current_line_offset;
 
-public:
+ public:
   Scanner(std::string_view source, std::string_view filename_ = "");
 
   // Scans and returns the next token of the source
@@ -59,7 +59,7 @@ public:
   // i guess that would be helpful for debugging
   std::string loom_toke_type_to_string(TokenType type);
 
-private:
+ private:
   // Check if the scanner is at EOF
   bool isAtEnd();
   char advance();
