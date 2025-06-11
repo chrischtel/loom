@@ -6,6 +6,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::cout << "Compilation successful!\n";
+  std::cout << "Compilationddw successful!\n";
   return 0;
 }
