@@ -159,6 +159,15 @@ LoomToken Scanner::scanNextToken() {
                                    : TokenType::TOKEN_EQUAL));
     case ';':
       return makeToken(TokenType::TOKEN_SEMICOLON);
+
+    case '/':
+      if (match('/')) {
+        while (peek() != '\n' && !isAtEnd()) advance();
+
+        return scanNextToken();
+      } else {
+        return makeToken(TokenType::TOKEN_SLASH);
+      }
     default:
 
       return makeErrorToken("Unexpected character", c);
