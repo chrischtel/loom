@@ -55,6 +55,9 @@ public:
   std::string loom_toke_type_to_string(TokenType type);
 
 private:
+  // Check if the scanner is at EOF
   bool isAtEnd();
   char advance();
+  char peek();
+  char peek_next();
 };
