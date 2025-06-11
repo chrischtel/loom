@@ -67,6 +67,17 @@ LoomToken Scanner::makeToken(TokenType type) {
   return LoomToken(type, loc, std::string(token_text));
 }
 
+LoomToken Scanner::makeErrorToken(const std::string &message,
+                                  char offending_char) {
+
+  LoomSourceLocation loc(filename, current_line, current_column - 1,
+                         current_offset - 1);
+
+  std::string error_message = message + ": '" + offending_char + "'";
+
+  return LoomToken(TokenType::TOKEN_ERROR, loc, error_message);
+}
+
 LoomToken Scanner::scanNextToken() {
   skipWhitespace();
   start_offset = current_offset; // WICHTIG: Start des Tokens markieren!
@@ -79,15 +90,17 @@ LoomToken Scanner::scanNextToken() {
 
   switch (c) {
 
-  case '\n':
+  case '\n': {
+    LoomToken token = makeToken(TokenType::TOKEN_NEWLINE);
+
     current_line++;
     current_column = 1;
     current_line_offset = current_offset;
-    return makeToken(TokenType::TOKEN_NEWLINE);
-
+    return token;
+  }
   default:
 
-    return makeToken(TokenType::TOKEN_EOF);
+    return makeErrorToken("Unexpected character", c);
   }
 }
 

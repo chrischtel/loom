@@ -8,6 +8,8 @@ enum class TokenType {
   TOKEN_WHITESPACE,
   TOKEN_NEWLINE,
   TOKEN_EOF,
+
+  TOKEN_ERROR
 };
 
 struct LoomSourceLocation {
@@ -65,4 +67,5 @@ private:
   void skipWhitespace();
   LoomSourceLocation getCurrentLocation();
   LoomToken makeToken(TokenType type);
+  LoomToken makeErrorToken(const std::string &message, char offending_char);
 };

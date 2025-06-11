@@ -6,7 +6,7 @@
 int main() {
   // 1. Unser Beispiel-Quellcode. Er enthält Leerzeichen und einen
   // Zeilenumbruch.
-  const char *source_code = "\n\n  ";
+  const char *source_code = "\n\n ddwd";
   std::cout << "Scanning source code: \"\\n  \"" << std::endl;
   std::cout << "--------------------------------" << std::endl;
 
@@ -24,8 +24,9 @@ int main() {
               << token.value << "'" << std::endl;
 
     // 5. Die Abbruchbedingung
-    if (token.type == TokenType::TOKEN_EOF) {
-      break; // Verlasse die Schleife
+    if (token.type == TokenType::TOKEN_EOF ||
+        token.type == TokenType::TOKEN_ERROR) {
+      break; // Verlasse die Schleife bei EOF ODER bei einem Fehler
     }
   }
 
