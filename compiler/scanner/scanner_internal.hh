@@ -47,5 +47,4 @@ private:
 
 public:
   Scanner(std::string_view source, std::string_view filename_ = "");
-  ~Scanner();
 };
