@@ -7,11 +7,32 @@
 
 #include "../scanner/scanner_internal.hh"  // Für LoomSourceLocation
 
+class NumberLiteral;
+class Identifier;
+class StringLiteral;
+class AssignmentExpr;
+class BinaryExpr;
+class VarDeclNode;
+class ExprStmtNode;
+
+class ASTVisitor {
+ public:
+  virtual ~ASTVisitor() = default;
+  virtual void visit(NumberLiteral& node) = 0;
+  virtual void visit(Identifier& node) = 0;
+  virtual void visit(StringLiteral& node) = 0;
+  virtual void visit(AssignmentExpr& node) = 0;
+  virtual void visit(BinaryExpr& node) = 0;
+  virtual void visit(VarDeclNode& node) = 0;
+  virtual void visit(ExprStmtNode& node) = 0;
+};
+
 // --- Basisklassen ---
 class ASTNode {
  public:
   virtual ~ASTNode() = default;
   virtual std::string toString() const = 0;
+  virtual void accept(ASTVisitor& visitor) = 0;
 
   LoomSourceLocation location;
 
@@ -42,6 +63,8 @@ class NumberLiteral : public ExprNode {
   std::string toString() const override {
     return "NumberLiteral(" + value + (is_float ? "f" : "i") + ")";
   }
+
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 class Identifier : public ExprNode {
@@ -52,6 +75,7 @@ class Identifier : public ExprNode {
       : ExprNode(loc), name(id_name) {}
 
   std::string toString() const override { return "Identifier(" + name + ")"; }
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 class AssignmentExpr : public ExprNode {
@@ -66,6 +90,8 @@ class AssignmentExpr : public ExprNode {
     return "Assignment(" + name + " = " +
            (value ? value->toString() : "nulll") + ")";
   }
+
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 class BinaryExpr : public ExprNode {
@@ -85,6 +111,8 @@ class BinaryExpr : public ExprNode {
     return "Binary(" + (left ? left->toString() : "null") + " " + op.value +
            " " + (right ? right->toString() : "null") + ")";
   }
+
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 class StringLiteral : public ExprNode {
@@ -97,6 +125,7 @@ class StringLiteral : public ExprNode {
   std::string toString() const override {
     return "StringLiteral(" + name + ")";
   }
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 // --- Konkrete Statement-Knoten ---
@@ -116,6 +145,7 @@ class VarDeclNode : public StmtNode {
   std::string toString() const override {
     return "VarDecl(" + name + (is_mutable ? ", mut" : "") + ")";
   }
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 class ExprStmtNode : public StmtNode {
@@ -128,4 +158,5 @@ class ExprStmtNode : public StmtNode {
   std::string toString() const override {
     return "ExprStmt(" + (expression ? expression->toString() : "null") + ")";
   }
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };

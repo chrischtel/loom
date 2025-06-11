@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "parser/ast_printer.hh"
 #include "parser/parser_internal.hh"
 #include "scanner/scanner_internal.hh"
 
@@ -69,11 +70,9 @@ int main(int argc, char* argv[]) {
   std::vector<std::unique_ptr<StmtNode>> ast = parser.parse();
   if (!parser.hasError()) {
     std::cout << "Parse successful!" << std::endl;
-    for (const auto& stmt : ast) {
-      if (stmt) {
-        std::cout << "Generated AST Node: " << stmt->toString() << std::endl;
-      }
-    }
+    std::cout << "--- Abstract Syntax Tree ---" << std::endl;
+    ASTPrinter printer;
+    printer.print(ast);  // Rufe die neue Print-Funktion auf
   } else {
     std::cout << "Parse failed!" << std::endl;
   }
