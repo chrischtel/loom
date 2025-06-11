@@ -53,4 +53,8 @@ public:
 
   // i guess that would be helpful for debugging
   std::string loom_toke_type_to_string(TokenType type);
+
+private:
+  bool isAtEnd();
+  void advance();
 };
