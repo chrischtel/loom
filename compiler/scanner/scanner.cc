@@ -37,6 +37,7 @@ void Scanner::skipWhitespace() {
     case '\r':
     case '\t':
       advance();
+      break;
     case '\n':
       return;
     default:
@@ -48,3 +49,55 @@ void Scanner::skipWhitespace() {
 Scanner::Scanner(std::string_view source, std::string_view filename_)
     : filename(filename_), source_buffer(source), current_offset(0),
       current_line(1), current_column(1), current_line_offset(0) {}
+
+LoomSourceLocation Scanner::getCurrentLocation() {
+
+  return LoomSourceLocation(filename, current_line, current_column,
+                            current_offset);
+}
+
+LoomToken Scanner::makeToken(TokenType type) {
+  std::string_view token_text =
+      source_buffer.substr(start_offset, current_offset - start_offset);
+
+  size_t start_column = start_offset - current_line_offset + 1;
+
+  LoomSourceLocation loc(filename, current_line, start_column, start_offset);
+
+  return LoomToken(type, loc, std::string(token_text));
+}
+
+LoomToken Scanner::scanNextToken() {
+  skipWhitespace();
+  start_offset = current_offset; // WICHTIG: Start des Tokens markieren!
+
+  if (isAtEnd()) {
+    return makeToken(TokenType::TOKEN_EOF); // So einfach ist das!
+  }
+
+  char c = advance();
+
+  switch (c) {
+
+  case '\n':
+    current_line++;
+    current_column = 1;
+    current_line_offset = current_offset;
+    return makeToken(TokenType::TOKEN_NEWLINE);
+
+  default:
+
+    return makeToken(TokenType::TOKEN_EOF);
+  }
+}
+
+std::string Scanner::loom_toke_type_to_string(TokenType type) {
+  switch (type) {
+  case TokenType::TOKEN_NEWLINE:
+    return "TOKEN_NEWLINE";
+  case TokenType::TOKEN_EOF:
+    return "TOKEN_EOF";
+  default:
+    return "TOKEN_UNKNOWN";
+  }
+}

@@ -11,11 +11,14 @@ enum class TokenType {
 };
 
 struct LoomSourceLocation {
-  int line;
-  int column;
+  std::string_view filename;
+  size_t line;
+  size_t column;
+  size_t offset;
 
-  LoomSourceLocation(int line = 1, int column = 1)
-      : line(line), column(column) {}
+  LoomSourceLocation(std::string_view filename, size_t line = 1,
+                     size_t column = 1, size_t offset = 0)
+      : filename(filename), line(line), column(column), offset(offset) {}
 
   std::string toString() const {
     return "Line: " + std::to_string(line) +
@@ -28,9 +31,7 @@ struct LoomToken {
   LoomSourceLocation location;
   std::string value;
 
-  LoomToken(TokenType type = TokenType::TOKEN_EOF,
-            LoomSourceLocation location = LoomSourceLocation{},
-            std::string value = "")
+  LoomToken(TokenType type, LoomSourceLocation location, std::string value)
       : type(type), location(location), value(value) {}
 };
 
@@ -40,6 +41,7 @@ private:
   std::string_view source_buffer;
 
   size_t current_offset;
+  size_t start_offset;
 
   size_t current_line;
   size_t current_column;
@@ -61,4 +63,6 @@ private:
   char peek();
   char peek_next();
   void skipWhitespace();
+  LoomSourceLocation getCurrentLocation();
+  LoomToken makeToken(TokenType type);
 };

@@ -1,13 +1,36 @@
+// main.cc
+
+#include "scanner/scanner_internal.hh" // Passe den Pfad ggf. an
 #include <iostream>
 
-int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <source_file>\n";
-    return 1;
+int main() {
+  // 1. Unser Beispiel-Quellcode. Er enthält Leerzeichen und einen
+  // Zeilenumbruch.
+  const char *source_code = "\n\n  ";
+  std::cout << "Scanning source code: \"\\n  \"" << std::endl;
+  std::cout << "--------------------------------" << std::endl;
+
+  // 2. Erstelle den Scanner
+  Scanner scanner(source_code, "test.loom");
+
+  // 3. Die Haupt-Testschleife
+  // for (;;) ist eine C++-Kurzform für eine Endlosschleife (wie while(true))
+  for (;;) {
+    LoomToken token = scanner.scanNextToken();
+
+    // 4. Gib die Token-Informationen aus
+    std::cout << "Type: " << scanner.loom_toke_type_to_string(token.type)
+              << "\t Location: " << token.location.toString() << "\t Value: '"
+              << token.value << "'" << std::endl;
+
+    // 5. Die Abbruchbedingung
+    if (token.type == TokenType::TOKEN_EOF) {
+      break; // Verlasse die Schleife
+    }
   }
 
-  std::string value = "";
+  std::cout << "--------------------------------" << std::endl;
+  std::cout << "Scanning finished." << std::endl;
 
-  std::cout << "Compilation successful!\n";
   return 0;
 }
