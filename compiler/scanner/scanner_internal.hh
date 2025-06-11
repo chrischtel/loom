@@ -47,4 +47,9 @@ private:
 
 public:
   Scanner(std::string_view source, std::string_view filename_ = "");
+  // Scans and returns the next token of the source
+  LoomToken scanNextToken();
+
+  // i guess that would be helpful for debugging
+  std::string loom_toke_type_to_string(TokenType type);
 };
