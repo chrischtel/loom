@@ -38,7 +38,7 @@ void Scanner::skipWhitespace() {
     case '\t':
       advance();
     case '\n':
-      break;
+      return;
     default:
       return;
     }
