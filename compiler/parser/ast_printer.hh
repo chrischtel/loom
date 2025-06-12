@@ -11,6 +11,8 @@ class ASTPrinter : public ASTVisitor {
   std::unique_ptr<TypeNode> visit(NumberLiteral& node) override;
   std::unique_ptr<TypeNode> visit(Identifier& node) override;
   std::unique_ptr<TypeNode> visit(StringLiteral& node) override;
+  std::unique_ptr<TypeNode> visit(BooleanLiteral& node) override;
+
   std::unique_ptr<TypeNode> visit(AssignmentExpr& node) override;
   std::unique_ptr<TypeNode> visit(BinaryExpr& node) override;
   std::unique_ptr<TypeNode> visit(VarDeclNode& node) override;

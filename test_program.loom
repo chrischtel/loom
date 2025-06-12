@@ -1,9 +1,14 @@
 // Sample Loom program
-let x: i32 = y;
+// TODO: IMPLEMENT i32, i64, f32, f16
+let x = 323;
 let message = "Hello World";
 define PI = 3.14159;
 
-mut counter = 0;
-counter = !counter;
+let negativ = false;
+
+
+mut counter = true;
+
+counter = !negativ;
 
 let result = 3 * (-3 * 5);

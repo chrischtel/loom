@@ -124,3 +124,9 @@ std::unique_ptr<TypeNode> ASTPrinter::visit(TypeNode& node) {
   std::cout << "- " << node.toString() << std::endl;
   return nullptr;
 }
+
+std::unique_ptr<TypeNode> ASTPrinter::visit(BooleanLiteral& node) {
+  indent();
+  std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
+}
