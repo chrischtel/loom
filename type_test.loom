@@ -1,5 +1,5 @@
 // Test different integer bit widths
-let small: i8 = 42;
+let small: i8 = 127;
 let medium: i16 = 1000;
 let normal: i32 = 100000;
 let large: i64 = 9999999999;
