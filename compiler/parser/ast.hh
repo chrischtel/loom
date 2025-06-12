@@ -169,7 +169,7 @@ class StringLiteral : public ExprNode {
 class VarDeclNode : public StmtNode {
  public:
   std::string name;
-  VarDeclKind kind;  // <-- Benutzt jetzt das neue Enum
+  VarDeclKind kind;
   std::unique_ptr<TypeNode> type;
   std::unique_ptr<ExprNode> initializer;
 
