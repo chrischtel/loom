@@ -48,6 +48,17 @@ std::unique_ptr<ExprNode> Parser::parseFactor() {
   return expr;
 }
 
+std::unique_ptr<ExprNode> Parser::parseUnary() {
+  if (match(TokenType::TOKEN_MINUS) || match(TokenType::TOKEN_BANG)) {
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseUnary();
+
+    return std::make_unique<UnaryExpr>(op, std::move(right));
+  }
+
+  parsePrimary();
+}
+
 std::unique_ptr<ExprNode> Parser::parsePrimary() {
   if (match(TokenType::TOKEN_NUMBER_INT)) {
     const LoomToken& token = previous();

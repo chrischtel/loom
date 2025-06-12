@@ -115,6 +115,20 @@ class BinaryExpr : public ExprNode {
   void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
+class UnaryExpr : public ExprNode {
+ public:
+  LoomToken op;
+  std::unique_ptr<ExprNode> right;
+
+  UnaryExpr(const LoomToken& op, std::unique_ptr<ExprNode> right)
+      : ExprNode(op.location), op(op), right(std::move(right)) {}
+
+  std::string toString() const override {
+    return "Unary(" + op.value + " " + (right ? right->toString() : "null") +
+           ")";
+  }
+};
+
 class StringLiteral : public ExprNode {
  public:
   std::string name;
