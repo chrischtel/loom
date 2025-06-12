@@ -22,6 +22,7 @@ enum class TokenType {
   TOKEN_RIGHT_PAREN,
   TOKEN_LEFT_BRACE,
   TOKEN_RIGHT_BRACE,
+  TOKEN_BANG,
 
   // Literals
   TOKEN_NUMBER_INT,

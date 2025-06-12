@@ -189,6 +189,8 @@ LoomToken Scanner::scanNextToken() {
       return makeToken(TokenType::TOKEN_STAR);
     case '(':
       return makeToken(TokenType::TOKEN_LEFT_PAREN);
+    case '!':
+      return makeToken(TokenType::TOKEN_BANG);
     case ')':
       return makeToken(TokenType::TOKEN_RIGHT_PAREN);
     case '{':
@@ -259,6 +261,8 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_LEFT_BRACE";
     case TokenType::TOKEN_RIGHT_BRACE:
       return "TOKEN_RIGHT_BRACE";
+    case TokenType::TOKEN_BANG:
+      return "TOKEN_BANG";
     case TokenType::TOKEN_ERROR:
       return "TOKEN_ERROR";
     default:
