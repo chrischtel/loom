@@ -7,6 +7,12 @@
 
 #include "../scanner/scanner_internal.hh"  // Für LoomSourceLocation
 
+enum class VarDeclKind {
+  LET,    // Für unveränderliche Laufzeit-Variablen
+  MUT,    // Für veränderliche Laufzeit-Variablen
+  DEFINE  // Für Compile-Zeit-Konstanten
+};
+
 class NumberLiteral;
 class Identifier;
 class StringLiteral;
@@ -15,6 +21,7 @@ class BinaryExpr;
 class VarDeclNode;
 class ExprStmtNode;
 class UnaryExpr;
+class TypeNode;
 
 class ASTVisitor {
  public:
@@ -27,6 +34,7 @@ class ASTVisitor {
   virtual void visit(VarDeclNode& node) = 0;
   virtual void visit(ExprStmtNode& node) = 0;
   virtual void visit(UnaryExpr& node) = 0;
+  virtual void visit(TypeNode& node) = 0;
 };
 
 // --- Basisklassen ---
@@ -40,6 +48,17 @@ class ASTNode {
 
  protected:
   ASTNode(const LoomSourceLocation& loc) : location(loc) {}
+};
+
+class TypeNode : public ASTNode {
+ public:
+  std::string name;
+  TypeNode(const LoomSourceLocation& loc, const std::string& name)
+      : ASTNode(loc), name(name) {}
+
+  std::string toString() const override { return "Type(" + name + ")"; }
+
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 class StmtNode : public ASTNode {
@@ -150,19 +169,37 @@ class StringLiteral : public ExprNode {
 class VarDeclNode : public StmtNode {
  public:
   std::string name;
-  bool is_mutable;
+  VarDeclKind kind;  // <-- Benutzt jetzt das neue Enum
+  std::unique_ptr<TypeNode> type;
   std::unique_ptr<ExprNode> initializer;
 
+  // Der Konstruktor nimmt jetzt das Enum entgegen
   VarDeclNode(const LoomSourceLocation& loc, const std::string& name,
-              bool is_mutable, std::unique_ptr<ExprNode> initializer)
+              VarDeclKind kind, std::unique_ptr<TypeNode> type,
+              std::unique_ptr<ExprNode> initializer)
       : StmtNode(loc),
         name(name),
-        is_mutable(is_mutable),
+        kind(kind),
+        type(std::move(type)),
         initializer(std::move(initializer)) {}
 
+  // Die toString()-Methode kann jetzt auch das Enum verwenden
   std::string toString() const override {
-    return "VarDecl(" + name + (is_mutable ? ", mut" : "") + ")";
+    std::string kind_str;
+    switch (kind) {
+      case VarDeclKind::LET:
+        kind_str = "let";
+        break;
+      case VarDeclKind::MUT:
+        kind_str = "mut";
+        break;
+      case VarDeclKind::DEFINE:
+        kind_str = "define";
+        break;
+    }
+    return "VarDecl(" + name + ", " + kind_str + ")";
   }
+
   void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 

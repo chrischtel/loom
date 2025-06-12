@@ -88,3 +88,9 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
   error(peek(), "Expected expression");
   return nullptr;
 }
+
+std::unique_ptr<TypeNode> Parser::parseType() {
+  const LoomToken& type_token = peek();
+  consume(TokenType::TOKEN_IDENTIFIER, "Expected type name.");
+  return std::make_unique<TypeNode>(type_token.location, type_token.value);
+}

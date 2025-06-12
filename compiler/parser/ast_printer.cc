@@ -23,9 +23,21 @@ void ASTPrinter::print(const std::vector<std::unique_ptr<StmtNode>>& ast) {
 
 void ASTPrinter::visit(VarDeclNode& node) {
   indent();
-  std::cout << "- VarDecl(" << node.name
-            << (node.is_mutable ? ", mutable" : ", immutable") << ")"
+  std::string kind_str;
+  switch (node.kind) {
+    case VarDeclKind::LET:
+      kind_str = "immutable";
+      break;
+    case VarDeclKind::MUT:
+      kind_str = "mutable";
+      break;
+    case VarDeclKind::DEFINE:
+      kind_str = "define";
+      break;
+  }
+  std::cout << "- VarDecl(" << node.name << ", " << kind_str << ")"
             << std::endl;
+
   if (node.initializer) {
     indentation_level++;
     indent();
@@ -99,6 +111,11 @@ void ASTPrinter::visit(Identifier& node) {
   std::cout << "- " << node.toString() << std::endl;
 }
 void ASTPrinter::visit(StringLiteral& node) {
+  indent();
+  std::cout << "- " << node.toString() << std::endl;
+}
+
+void ASTPrinter::visit(TypeNode& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
 }

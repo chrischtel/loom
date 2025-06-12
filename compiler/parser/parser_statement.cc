@@ -3,10 +3,12 @@
 
 std::unique_ptr<StmtNode> Parser::parseDeclaration() {
   try {
-    if (match(TokenType::TOKEN_KEYWORD_LET)) return parseLetDeclaration(false);
-    if (match(TokenType::TOKEN_KEYWORD_MUT)) return parseLetDeclaration(true);
+    if (match(TokenType::TOKEN_KEYWORD_LET))
+      return parseVarDeclaration(VarDeclKind::LET);
+    if (match(TokenType::TOKEN_KEYWORD_MUT))
+      return parseVarDeclaration(VarDeclKind::MUT);
     if (match(TokenType::TOKEN_KEYWORD_DEFINE))
-      return parseLetDeclaration(false);
+      return parseVarDeclaration(VarDeclKind::DEFINE);
 
     return parseExpressionStatement();
   } catch (const ParseError&) {
@@ -15,11 +17,16 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
   }
 }
 
-std::unique_ptr<StmtNode> Parser::parseLetDeclaration(bool is_mutable) {
+std::unique_ptr<StmtNode> Parser::parseVarDeclaration(VarDeclKind kind) {
   const LoomToken& name_token = peek();
   consume(TokenType::TOKEN_IDENTIFIER,
           "Expected variable name after 'let'/'mut'.");
   std::string name = previous().value;
+
+  std::unique_ptr<TypeNode> type = nullptr;
+  if (match(TokenType::TOKEN_COLON)) {
+    type = parseType();
+  }
 
   std::unique_ptr<ExprNode> initializer = nullptr;
   if (match(TokenType::TOKEN_EQUAL)) {
@@ -28,8 +35,9 @@ std::unique_ptr<StmtNode> Parser::parseLetDeclaration(bool is_mutable) {
 
   consume(TokenType::TOKEN_SEMICOLON,
           "Expected ';' after variable declaration.");
-  return std::make_unique<VarDeclNode>(name_token.location, name, is_mutable,
-                                       std::move(initializer));
+
+  return std::make_unique<VarDeclNode>(name_token.location, name, kind,
+                                       std::move(type), std::move(initializer));
 }
 
 std::unique_ptr<StmtNode> Parser::parseExpressionStatement() {
