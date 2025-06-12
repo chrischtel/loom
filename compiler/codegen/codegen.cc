@@ -76,6 +76,17 @@ void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
 
 void CodeGen::print_ir() const { module->print(llvm::outs(), nullptr); }
 
+void CodeGen::writeIRToFile(const std::string& filename) const {
+  std::error_code EC;
+  llvm::raw_fd_ostream file(filename, EC);
+  if (EC) {
+    std::cerr << "Error opening file " << filename << ": " << EC.message()
+              << std::endl;
+    return;
+  }
+  module->print(file, nullptr);
+}
+
 // --- Helper: AST-Typ zu LLVM-Typ ---
 llvm::Type* CodeGen::typeToLLVMType(TypeNode& type) {
   std::cout << "[CodeGen] Converting TypeNode to LLVM type, typeid: "
@@ -128,6 +139,64 @@ llvm::Type* CodeGen::typeToLLVMType(TypeNode& type) {
   throw std::runtime_error("Unknown TypeNode for CodeGen");
 }
 
+// --- Helper: Generate code with target type for casting ---
+llvm::Value* CodeGen::codegenWithTargetType(ASTNode& node,
+                                            llvm::Type* targetType) {
+  std::cout << "[CodeGen] Generating node with target type casting"
+            << std::endl;
+
+  // Generate the base value
+  llvm::Value* baseValue = codegen(node);
+  if (!baseValue) {
+    return nullptr;
+  }
+
+  // If types match, return as-is
+  if (baseValue->getType() == targetType) {
+    std::cout << "[CodeGen] Types already match, no casting needed"
+              << std::endl;
+    return baseValue;
+  }
+
+  // Cast integer types
+  if (baseValue->getType()->isIntegerTy() && targetType->isIntegerTy()) {
+    std::cout << "[CodeGen] Casting between integer types" << std::endl;
+
+    auto* baseIntType = llvm::cast<llvm::IntegerType>(baseValue->getType());
+    auto* targetIntType = llvm::cast<llvm::IntegerType>(targetType);
+
+    if (baseIntType->getBitWidth() > targetIntType->getBitWidth()) {
+      // Truncate (e.g., i32 -> i8)
+      return builder->CreateTrunc(baseValue, targetType, "trunc");
+    } else {
+      // Extend (e.g., i8 -> i32)
+      return builder->CreateSExt(baseValue, targetType, "sext");
+    }
+  }
+
+  // Cast float types
+  if (baseValue->getType()->isFloatingPointTy() &&
+      targetType->isFloatingPointTy()) {
+    std::cout << "[CodeGen] Casting between float types" << std::endl;
+    return builder->CreateFPCast(baseValue, targetType, "fpcast");
+  }
+
+  // Integer to float
+  if (baseValue->getType()->isIntegerTy() && targetType->isFloatingPointTy()) {
+    std::cout << "[CodeGen] Casting integer to float" << std::endl;
+    return builder->CreateSIToFP(baseValue, targetType, "sitofp");
+  }
+
+  // Float to integer
+  if (baseValue->getType()->isFloatingPointTy() && targetType->isIntegerTy()) {
+    std::cout << "[CodeGen] Casting float to integer" << std::endl;
+    return builder->CreateFPToSI(baseValue, targetType, "fptosi");
+  }
+
+  std::cout << "[CodeGen] ERROR: Unsupported type casting" << std::endl;
+  throw std::runtime_error("Unsupported type casting in codegenWithTargetType");
+}
+
 // --- Codegen Dispatch ---
 llvm::Value* CodeGen::codegen(ASTNode& node) {
   std::cout << "[CodeGen] Dispatching node: " << node.toString() << std::endl;
@@ -174,18 +243,6 @@ llvm::Value* CodeGen::codegen(NumberLiteral& node) {
 llvm::Value* CodeGen::codegen(VarDeclNode& node) {
   std::cout << "[CodeGen] Generating VarDeclNode: " << node.name << std::endl;
 
-  // 1. Generiere den Code für den Initialisierungswert.
-  //    z.B. bei 'let x = 42;', wird hier der Wert '42' generiert.
-  std::cout << "[CodeGen] Generating initializer for variable: " << node.name
-            << std::endl;
-  llvm::Value* initializerVal = codegen(*node.initializer);
-  std::cout << "[CodeGen] Initializer generated successfully" << std::endl;
-
-  // 2. Bestimme den LLVM-Typ der Variable aus dem AST-Typknoten.
-  //    Dein Semantic Analyzer hat sichergestellt, dass node.type existiert.
-  std::cout << "[CodeGen] Determining LLVM type for variable: " << node.name
-            << std::endl;
-
   // Check if type is null
   if (node.type == nullptr) {
     std::cout << "[CodeGen] ERROR: node.type is nullptr for variable: "
@@ -193,11 +250,20 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
     throw std::runtime_error("Type is null for variable: " + node.name);
   }
 
+  // 2. Bestimme den LLVM-Typ der Variable aus dem AST-Typknoten.
+  std::cout << "[CodeGen] Determining LLVM type for variable: " << node.name
+            << std::endl;
   llvm::Type* varType = typeToLLVMType(*node.type);
   std::cout << "[CodeGen] LLVM type determined successfully" << std::endl;
 
-  // 3. Erzeuge eine 'alloca'-Instruktion. Das reserviert Speicher
-  //    auf dem Stack für die Variable am Anfang der Funktion.
+  // 1. Generiere den Code für den Initialisierungswert mit dem richtigen Typ.
+  std::cout << "[CodeGen] Generating initializer for variable: " << node.name
+            << std::endl;
+  llvm::Value* initializerVal =
+      codegenWithTargetType(*node.initializer, varType);
+  std::cout << "[CodeGen] Initializer generated successfully" << std::endl;
+
+  // 3. Erzeuge eine 'alloca'-Instruktion.
   std::cout << "[CodeGen] Creating alloca for variable: " << node.name
             << std::endl;
   llvm::Value* alloca = builder->CreateAlloca(varType, nullptr, node.name);
@@ -213,6 +279,5 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
   std::cout << "[CodeGen] Variable " << node.name << " added to symbol table"
             << std::endl;
 
-  // Eine Deklaration erzeugt keinen "Wert", daher geben wir nullptr zurück.
   return nullptr;
 }

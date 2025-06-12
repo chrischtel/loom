@@ -1,5 +1,7 @@
 // main.cc
 
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -76,16 +78,50 @@ int main(int argc, char* argv[]) {
     sema.analyze(ast);
 
     if (!sema.hasError()) {
-      std::cout << "Semantic analysis successful!" << std::endl;
-
-      // --- PHASE 4: CODE GENERATION (NEU) ---
+      std::cout << "Semantic analysis successful!"
+                << std::endl;  // --- PHASE 4: CODE GENERATION (NEU) ---
       std::cout << std::endl << "--- Running Code Generator ---" << std::endl;
       CodeGen code_generator;
       code_generator.generate(ast);
 
       std::cout << "--- Generated LLVM IR ---" << std::endl;
       code_generator.print_ir();
-      std::cout << "-------------------------" << std::endl;
+      std::cout << "-------------------------"
+                << std::endl;  // --- PHASE 5: COMPILE TO EXECUTABLE ---
+      std::cout << std::endl << "--- Compiling to Executable ---" << std::endl;
+
+      // Generate output filename (replace .loom with .exe)
+      std::string output_name = filename;
+      size_t last_dot = output_name.find_last_of('.');
+      if (last_dot != std::string::npos) {
+        output_name = output_name.substr(0, last_dot);
+      }
+      output_name += ".exe";
+
+      // Generate temporary IR file
+      std::string ir_filename = output_name + ".ll";
+
+      // Write IR to file
+      code_generator.writeIRToFile(ir_filename);
+      std::cout << "Generated IR file: " << ir_filename << std::endl;
+
+      // Compile IR to executable using clang
+      std::string compile_cmd =
+          "clang \"" + ir_filename + "\" -o \"" + output_name + "\"";
+      std::cout << "Running: " << compile_cmd << std::endl;
+
+      int result = system(compile_cmd.c_str());
+      if (result == 0) {
+        std::cout << "Successfully compiled to: " << output_name << std::endl;
+
+        // Clean up IR file
+        std::filesystem::remove(ir_filename);
+        std::cout << "Cleaned up temporary IR file." << std::endl;
+      } else {
+        std::cerr << "Error: Compilation failed with exit code " << result
+                  << std::endl;
+      }
+
       // --- ENDE NEUER TEIL ---
 
     } else {

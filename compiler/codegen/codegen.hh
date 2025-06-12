@@ -30,9 +30,14 @@ class CodeGen {
 
   void print_ir() const;
 
+  // Write IR to file
+  void writeIRToFile(const std::string& filename) const;
+
+  // Public access to LLVM module for external compilation
+  std::unique_ptr<llvm::Module> module;
+
  private:
   std::unique_ptr<llvm::LLVMContext> context;
-  std::unique_ptr<llvm::Module> module;
   std::unique_ptr<llvm::IRBuilder<>> builder;
 
   std::map<std::string, llvm::Value*> named_values;
@@ -43,4 +48,7 @@ class CodeGen {
   llvm::Value* codegen(VarDeclNode& node);
 
   llvm::Type* typeToLLVMType(TypeNode& type);
+
+  // Generate code for a node with a specific target type (for type casting)
+  llvm::Value* codegenWithTargetType(ASTNode& node, llvm::Type* targetType);
 };
