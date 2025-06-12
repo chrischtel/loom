@@ -1,0 +1,6 @@
+let x = 10;
+if (x == 10) {
+  print("It is ten!");
+} else {
+  print("It is NOT ten!");
+}
