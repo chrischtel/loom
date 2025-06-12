@@ -20,6 +20,10 @@ class UnaryExpr;
 class VarDeclNode;
 class ExprStmtNode;
 class TypeNode;
+class IntegerTypeNode;
+class FloatTypeNode;
+class BooleanTypeNode;
+class StringTypeNode;
 
 // KORREKTUR 2: Nur noch EIN Visitor-Interface
 class ASTVisitor {
@@ -35,6 +39,10 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(VarDeclNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(ExprStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(TypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(IntegerTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(FloatTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(BooleanTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(StringTypeNode& node) = 0;
 };
 
 // Basisklasse
@@ -61,13 +69,106 @@ class ExprNode : public ASTNode {
   using ASTNode::ASTNode;
 };
 
-// Konkrete Knoten
+// Base type node - now abstract
 class TypeNode : public ASTNode {
  public:
-  std::string name;
-  TypeNode(const LoomSourceLocation& loc, const std::string& n)
-      : ASTNode(loc), name(n) {}
-  std::string toString() const override { return "Type(" + name + ")"; }
+  virtual bool isEqualTo(const TypeNode* other) const = 0;
+  virtual std::string getTypeName() const = 0;
+
+ protected:
+  using ASTNode::ASTNode;
+};
+
+// Integer types (i8, i16, i32, i64)
+class IntegerTypeNode : public TypeNode {
+ public:
+  int bit_width;
+  bool is_signed;
+
+  IntegerTypeNode(const LoomSourceLocation& loc, int width,
+                  bool signed_type = true)
+      : TypeNode(loc), bit_width(width), is_signed(signed_type) {}
+
+  std::string toString() const override {
+    return (is_signed ? "i" : "u") + std::to_string(bit_width);
+  }
+
+  std::string getTypeName() const override {
+    return (is_signed ? "i" : "u") + std::to_string(bit_width);
+  }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_int = dynamic_cast<const IntegerTypeNode*>(other)) {
+      return this->bit_width == other_int->bit_width &&
+             this->is_signed == other_int->is_signed;
+    }
+    return false;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Float types (f16, f32, f64)
+class FloatTypeNode : public TypeNode {
+ public:
+  int bit_width;
+
+  FloatTypeNode(const LoomSourceLocation& loc, int width)
+      : TypeNode(loc), bit_width(width) {}
+
+  std::string toString() const override {
+    return "f" + std::to_string(bit_width);
+  }
+
+  std::string getTypeName() const override {
+    return "f" + std::to_string(bit_width);
+  }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_float = dynamic_cast<const FloatTypeNode*>(other)) {
+      return this->bit_width == other_float->bit_width;
+    }
+    return false;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Boolean type
+class BooleanTypeNode : public TypeNode {
+ public:
+  BooleanTypeNode(const LoomSourceLocation& loc) : TypeNode(loc) {}
+
+  std::string toString() const override { return "bool"; }
+
+  std::string getTypeName() const override { return "bool"; }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    return dynamic_cast<const BooleanTypeNode*>(other) != nullptr;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// String type
+class StringTypeNode : public TypeNode {
+ public:
+  StringTypeNode(const LoomSourceLocation& loc) : TypeNode(loc) {}
+
+  std::string toString() const override { return "string"; }
+
+  std::string getTypeName() const override { return "string"; }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    return dynamic_cast<const StringTypeNode*>(other) != nullptr;
+  }
+
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
     return visitor.visit(*this);
   }

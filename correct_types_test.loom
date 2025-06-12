@@ -1,0 +1,7 @@
+// Test correct type assignments
+let normal: i32 = 42;        // i32 literal to i32 variable - should work
+let flag: bool = true;       // bool literal to bool variable - should work
+let message: string = "Hi";  // string literal to string variable - should work
+
+// Test arithmetic with same types
+let result = normal + normal;  // i32 + i32 should work

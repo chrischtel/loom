@@ -46,14 +46,14 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
   }
 
   // Schritt 3: Führe die Typ-Prüfung durch.
-  if (node.type && initializer_type) {
-    // Fall A: Typ ist deklariert UND es gibt einen Initializer.
+  if (node.type && initializer_type) {  // Fall A: Typ ist deklariert UND es
+                                        // gibt einen Initializer.
     // Wir müssen prüfen, ob die Typen übereinstimmen.
-    if (node.type->name != initializer_type->name) {
+    if (!node.type->isEqualTo(initializer_type.get())) {
       error(node.location,
             "Type mismatch: Cannot initialize variable of type '" +
-                node.type->name + "' with value of type '" +
-                initializer_type->name + "'.");
+                node.type->getTypeName() + "' with value of type '" +
+                initializer_type->getTypeName() + "'.");
     }
   }
 
@@ -62,8 +62,7 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
   if (node.type) {
     // Wenn ein Typ explizit angegeben wurde, nehmen wir den.
     // Wir müssen eine Kopie erstellen, da der `node.type` unique ist.
-    final_type =
-        std::make_unique<TypeNode>(node.type->location, node.type->name);
+    final_type = node.type->accept(*this);
   } else if (initializer_type) {
     // Ansonsten inferieren (schlussfolgern) wir den Typ vom Initializer.
     final_type = std::move(initializer_type);
@@ -105,19 +104,20 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(TypeNode& /* node */) {
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(NumberLiteral& node) {
   if (node.is_float) {
-    return std::make_unique<TypeNode>(node.location, "float");
+    return std::make_unique<FloatTypeNode>(node.location,
+                                           64);  // Default to f64
   } else {
-    return std::make_unique<TypeNode>(node.location, "int");
+    return std::make_unique<IntegerTypeNode>(node.location,
+                                             32);  // Default to i32
   }
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BooleanLiteral& node) {
-  // Ein BooleanLiteral hat immer den Typ "bool".
-  return std::make_unique<TypeNode>(node.location, "bool");
+  return std::make_unique<BooleanTypeNode>(node.location);
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StringLiteral& node) {
-  return std::make_unique<TypeNode>(node.location, "string");
+  return std::make_unique<StringTypeNode>(node.location);
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(Identifier& node) {
@@ -125,9 +125,8 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(Identifier& node) {
   if (info == nullptr) {
     error(node.location, "Undeclared identifier '" + node.name + "'.");
     return nullptr;
-  }
-  // Erstelle eine Kopie des Typs aus der Symboltabelle und gib sie zurück.
-  return std::make_unique<TypeNode>(node.location, info->type->name);
+  }  // Create a copy by using the visitor pattern on the stored type
+  return info->type->accept(*this);
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(AssignmentExpr& node) {
@@ -145,11 +144,11 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(AssignmentExpr& node) {
           "Cannot assign to immutable variable '" + node.name + "'.");
     return nullptr;
   }
-
-  if (info->type->name != value_type->name) {
+  if (!info->type->isEqualTo(value_type.get())) {
     error(node.location, "Type mismatch: Cannot assign value of type '" +
-                             value_type->name + "' to variable '" + node.name +
-                             "' of type '" + info->type->name + "'.");
+                             value_type->getTypeName() + "' to variable '" +
+                             node.name + "' of type '" +
+                             info->type->getTypeName() + "'.");
     return nullptr;
   }
 
@@ -160,21 +159,22 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(AssignmentExpr& node) {
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnaryExpr& node) {
   std::unique_ptr<TypeNode> right_type = node.right->accept(*this);
   if (!right_type) return nullptr;
-
   switch (node.op.type) {
     case TokenType::TOKEN_BANG:
-      // Für '!' könnte man einen 'bool'-Typ erwarten.
-      // Da wir den noch nicht haben, lassen wir vorerst alles zu.
-      // Später: if (right_type->name != "bool") { error(...) }
-      return std::make_unique<TypeNode>(node.location, "bool");
+      // Logical NOT operator always returns bool
+      return std::make_unique<BooleanTypeNode>(node.location);
 
     case TokenType::TOKEN_MINUS:
-      if (right_type->name != "int" && right_type->name != "float") {
+      // Check if the type supports unary minus (integers and floats)
+      if (dynamic_cast<const IntegerTypeNode*>(right_type.get()) ||
+          dynamic_cast<const FloatTypeNode*>(right_type.get())) {
+        // Return the same type as the operand
+        return right_type->accept(*this);
+      } else {
         error(node.op.location, "Operator '-' cannot be applied to type '" +
-                                    right_type->name + "'.");
+                                    right_type->getTypeName() + "'.");
         return nullptr;
       }
-      return std::make_unique<TypeNode>(node.location, right_type->name);
 
     default:
       error(node.op.location, "Unknown unary operator.");
@@ -185,18 +185,37 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnaryExpr& node) {
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BinaryExpr& node) {
   std::unique_ptr<TypeNode> left_type = node.left->accept(*this);
   std::unique_ptr<TypeNode> right_type = node.right->accept(*this);
-
   if (!left_type || !right_type) return nullptr;
 
-  // TODO: Implementiere die eigentlichen Typ-Regeln für binäre Operatoren.
-  // z.B. int + int -> int, float + float -> float, int + float -> float?
-  // Für den Moment nehmen wir einfach an, der Typ ist der des linken Operanden.
-  if (left_type->name != right_type->name) {
+  // Check if the types are compatible for binary operations
+  if (!left_type->isEqualTo(right_type.get())) {
     error(node.op.location, "Type mismatch for operator '" + node.op.value +
-                                "': '" + left_type->name + "' and '" +
-                                right_type->name + "'.");
+                                "': '" + left_type->getTypeName() + "' and '" +
+                                right_type->getTypeName() + "'.");
     return nullptr;
   }
 
-  return left_type;
+  // Return a copy of the left operand's type
+  return left_type->accept(*this);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(IntegerTypeNode& node) {
+  // Create a copy of the integer type
+  return std::make_unique<IntegerTypeNode>(node.location, node.bit_width,
+                                           node.is_signed);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FloatTypeNode& node) {
+  // Create a copy of the float type
+  return std::make_unique<FloatTypeNode>(node.location, node.bit_width);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BooleanTypeNode& node) {
+  // Create a copy of the boolean type
+  return std::make_unique<BooleanTypeNode>(node.location);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StringTypeNode& node) {
+  // Create a copy of the string type
+  return std::make_unique<StringTypeNode>(node.location);
 }

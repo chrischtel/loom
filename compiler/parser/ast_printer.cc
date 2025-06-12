@@ -130,3 +130,27 @@ std::unique_ptr<TypeNode> ASTPrinter::visit(BooleanLiteral& node) {
   std::cout << "- " << node.toString() << std::endl;
   return nullptr;
 }
+
+std::unique_ptr<TypeNode> ASTPrinter::visit(IntegerTypeNode& node) {
+  indent();
+  std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> ASTPrinter::visit(FloatTypeNode& node) {
+  indent();
+  std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> ASTPrinter::visit(BooleanTypeNode& node) {
+  indent();
+  std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> ASTPrinter::visit(StringTypeNode& node) {
+  indent();
+  std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
+}
