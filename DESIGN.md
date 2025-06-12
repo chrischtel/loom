@@ -68,8 +68,7 @@ An identifier starts with a letter or underscore, followed by any number of lett
 *   **Special:** `nil`, `void`.
 
 ### 2.7. Statement Separation
-Statements are terminated by a newline. Semicolons (`;`) may be used to separate multiple statements on a single line.
-
+Semicolons (`;`) are used to separate statements.
 ---
 
 ## 3. Syntactic Structure (Grammar)
