@@ -37,10 +37,15 @@ std::unique_ptr<ExprNode> Parser::parseTerm() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseFactor() {
-  // Im Moment leiten wir nur an parsePrimary weiter.
-  // Später würde hier die Logik für '*' und '/' stehen,
-  // die genau wie in parseTerm funktioniert.
-  return parsePrimary();
+  std::unique_ptr<ExprNode> expr = parseUnary();
+
+  while (match(TokenType::TOKEN_STAR) || match(TokenType::TOKEN_SLASH)) {
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseUnary();
+    expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+  }
+
+  return expr;
 }
 
 std::unique_ptr<ExprNode> Parser::parsePrimary() {

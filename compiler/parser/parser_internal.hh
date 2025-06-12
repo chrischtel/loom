@@ -35,6 +35,7 @@ class Parser {
   std::unique_ptr<ExprNode> parseAssignment();
   std::unique_ptr<ExprNode> parseTerm();
   std::unique_ptr<ExprNode> parseFactor();
+  std::unique_ptr<ExprNode> parseUnary();
   std::unique_ptr<ExprNode> parsePrimary();
 
  public:
