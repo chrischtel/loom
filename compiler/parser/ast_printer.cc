@@ -78,6 +78,18 @@ void ASTPrinter::visit(BinaryExpr& node) {
   indentation_level--;
 }
 
+void ASTPrinter::visit(UnaryExpr& node) {
+  indent();
+  std::cout << "- Unary(" << node.op.value << ")" << std::endl;
+  indentation_level++;
+  if (node.right) {
+    indent();
+    std::cout << "- Right:" << std::endl;
+    node.right->accept(*this);
+  }
+  indentation_level--;
+}
+
 void ASTPrinter::visit(NumberLiteral& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;

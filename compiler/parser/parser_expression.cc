@@ -56,7 +56,7 @@ std::unique_ptr<ExprNode> Parser::parseUnary() {
     return std::make_unique<UnaryExpr>(op, std::move(right));
   }
 
-  parsePrimary();
+  return parsePrimary();
 }
 
 std::unique_ptr<ExprNode> Parser::parsePrimary() {

@@ -16,6 +16,7 @@ class ASTPrinter : public ASTVisitor {
   void visit(BinaryExpr& node) override;
   void visit(VarDeclNode& node) override;
   void visit(ExprStmtNode& node) override;
+  void visit(UnaryExpr& node) override;
 
  private:
   void indent();

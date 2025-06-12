@@ -4,4 +4,4 @@ let message = "Hello World";
 define PI = 3.14159;
 
 mut counter = 0;
-counter = counter + 1;
+counter = !counter;

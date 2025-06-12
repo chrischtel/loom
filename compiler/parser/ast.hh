@@ -14,6 +14,7 @@ class AssignmentExpr;
 class BinaryExpr;
 class VarDeclNode;
 class ExprStmtNode;
+class UnaryExpr;
 
 class ASTVisitor {
  public:
@@ -25,6 +26,7 @@ class ASTVisitor {
   virtual void visit(BinaryExpr& node) = 0;
   virtual void visit(VarDeclNode& node) = 0;
   virtual void visit(ExprStmtNode& node) = 0;
+  virtual void visit(UnaryExpr& node) = 0;
 };
 
 // --- Basisklassen ---
@@ -127,6 +129,8 @@ class UnaryExpr : public ExprNode {
     return "Unary(" + op.value + " " + (right ? right->toString() : "null") +
            ")";
   }
+
+  void accept(ASTVisitor& visitor) override { visitor.visit(*this); }
 };
 
 class StringLiteral : public ExprNode {
