@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "codegen/codegen.hh"
 #include "parser/ast_printer.hh"
 #include "parser/parser_internal.hh"
 #include "scanner/scanner_internal.hh"
@@ -64,25 +65,33 @@ int main(int argc, char* argv[]) {
     }
   }
   std::cout << "--- Scanner Finished ---" << std::endl << std::endl;
-
   std::cout << "--- Running Parser ---" << std::endl;
   Parser parser(tokens);
-
   std::vector<std::unique_ptr<StmtNode>> ast = parser.parse();
+
+  // --- PHASE 3: SEMANTIC ANALYSIS ---
   if (!parser.hasError()) {
     std::cout << std::endl << "--- Running Semantic Analyzer ---" << std::endl;
     SemanticAnalyzer sema;
-    sema.analyze(
-        ast);  // Rufe die Analyse auf dem AST auf    if (!sema.hasError()) {
-    std::cout << "Semantic analysis successful!" << std::endl;
-    // Print the AST
-    std::cout << "--- Abstract Syntax Tree ---" << std::endl;
-    ASTPrinter printer;
-    printer.print(ast);
-  } else {
-    std::cout << "Semantic analysis failed!" << std::endl;
-  }
-  std::cout << "--- Semantic Analyzer Finished ---" << std::endl;
+    sema.analyze(ast);
 
+    if (!sema.hasError()) {
+      std::cout << "Semantic analysis successful!" << std::endl;
+
+      // --- PHASE 4: CODE GENERATION (NEU) ---
+      std::cout << std::endl << "--- Running Code Generator ---" << std::endl;
+      CodeGen code_generator;
+      code_generator.generate(ast);
+
+      std::cout << "--- Generated LLVM IR ---" << std::endl;
+      code_generator.print_ir();
+      std::cout << "-------------------------" << std::endl;
+      // --- ENDE NEUER TEIL ---
+
+    } else {
+      std::cout << "Semantic analysis failed!" << std::endl;
+    }
+    std::cout << "--- Semantic Analyzer Finished ---" << std::endl;
+  }
   return 0;
 }

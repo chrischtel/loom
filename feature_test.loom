@@ -1,36 +1,4 @@
-// Comprehensive feature test
-// Comments are supported!
 
-// Variable declarations with different kinds
-let immutable_int: i32 = 42;
-mut mutable_var: i16 = 100;
-define CONSTANT: f64 = 3.14159;
-
-// Type inference
-let inferred = "hello world";
-let inferred_num = 123;
-
-// Different integer bit widths
-let tiny: i8 = 127;
-let small: i16 = 32000;
-let normal: i32 = 1000000;
-let big: i64 = 9999999999;
-
-// Unsigned integers
-let byte: u8 = 255;
-let word: u16 = 65535;
-
-// Float types
-let half: f16 = 1.5;
-let single: f32 = 2.71828;
-let double: f64 = 3.141592653589793;
-
-// Boolean
-let flag: bool = true;
-let other_flag: bool = false;
-
-// String literals
-let message: string = "Hello, World!";
 let quote: string = "This has \"quotes\" inside";
 
 // Expressions

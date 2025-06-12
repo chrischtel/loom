@@ -8,7 +8,15 @@ endif()
 
 # Force Clang compiler (must be set before project())
 if(WIN32)
-    # On Windows, prefer Clang over MSVC
+    # On Windows, prefer clang-cl over clang++ for better MSVC compatibility
+    find_program(CLANG_CL_EXECUTABLE NAMES clang-cl clang-cl.exe
+        PATHS
+            "C:/Program Files/LLVM/bin"
+            "C:/Program Files (x86)/LLVM/bin"
+            "$ENV{ProgramFiles}/LLVM/bin"
+        DOC "Clang-cl compiler executable"
+    )
+    
     find_program(CLANG_EXECUTABLE NAMES clang clang.exe
         PATHS
             "C:/Program Files/LLVM/bin"
@@ -25,7 +33,12 @@ if(WIN32)
         DOC "Clang++ compiler executable"
     )
     
-    if(CLANG_EXECUTABLE AND CLANGXX_EXECUTABLE)
+    # Prefer clang-cl for MSVC compatibility, fallback to clang++
+    if(CLANG_CL_EXECUTABLE)
+        set(CMAKE_C_COMPILER ${CLANG_CL_EXECUTABLE})
+        set(CMAKE_CXX_COMPILER ${CLANG_CL_EXECUTABLE})
+        message(STATUS "Using Clang-cl compiler for MSVC compatibility: ${CLANG_CL_EXECUTABLE}")
+    elseif(CLANG_EXECUTABLE AND CLANGXX_EXECUTABLE)
         set(CMAKE_C_COMPILER ${CLANG_EXECUTABLE})
         set(CMAKE_CXX_COMPILER ${CLANGXX_EXECUTABLE})
         message(STATUS "Using Clang compiler: ${CLANGXX_EXECUTABLE}")

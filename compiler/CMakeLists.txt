@@ -45,12 +45,19 @@ if(LIB_SOURCES)
     
     # Link dependencies
 
-    
-    # Apply compiler warnings
+      # Apply compiler warnings
     loom_set_compiler_warnings(loom_compiler_lib)
     
     # Enable sanitizers in debug builds
     loom_enable_sanitizers(loom_compiler_lib)
+    
+    # Fix for LLVM/MSVC iterator debug level mismatch on Windows
+    if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+        # LLVM libraries are typically built with _ITERATOR_DEBUG_LEVEL=0 even in debug builds
+        # This fixes compatibility issues when linking with LLVM
+        target_compile_definitions(loom_compiler_lib PRIVATE _ITERATOR_DEBUG_LEVEL=0)
+    endif()
+    
       # Alias for easier linking
     add_library(Loom::CompilerLib ALIAS loom_compiler_lib)
     
@@ -75,13 +82,18 @@ if(MAIN_SOURCES)
         target_link_libraries(loom PRIVATE loom_compiler_lib)
     else()
 
-    endif()
-    
-    # Apply compiler warnings
+    endif()    # Apply compiler warnings
     loom_set_compiler_warnings(loom)
     
     # Enable sanitizers in debug builds
     loom_enable_sanitizers(loom)
+    
+    # Fix for LLVM/MSVC iterator debug level mismatch on Windows
+    if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+        # LLVM libraries are typically built with _ITERATOR_DEBUG_LEVEL=0 even in debug builds
+        # This fixes compatibility issues when linking with LLVM
+        target_compile_definitions(loom PRIVATE _ITERATOR_DEBUG_LEVEL=0)
+    endif()
     
     # Set output directory
     set_target_properties(loom PROPERTIES
@@ -223,8 +235,7 @@ if(LOOM_USE_LLVM)
             set(FINAL_LLVM_LIBS ${LLVM_LIBRARIES})
             if(LLVM_SYSTEM_LIBS)
                 list(APPEND FINAL_LLVM_LIBS ${LLVM_SYSTEM_LIBS})
-            endif()
-            
+            endif()            
             # Add library search path
             if(LLVM_LIBRARY_DIRS)
                 link_directories(${LLVM_LIBRARY_DIRS})
