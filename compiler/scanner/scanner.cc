@@ -6,6 +6,8 @@ static const std::unordered_map<std::string_view, TokenType> keywords = {
     {"let", TokenType::TOKEN_KEYWORD_LET},
     {"mut", TokenType::TOKEN_KEYWORD_MUT},
     {"define", TokenType::TOKEN_KEYWORD_DEFINE},
+    {"true", TokenType::TOKEN_KEYWORD_TRUE},
+    {"false", TokenType::TOKEN_KEYWORD_FALSE},
 };
 
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
@@ -237,6 +239,10 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_MUT";
     case TokenType::TOKEN_KEYWORD_DEFINE:
       return "TOKEN_KEYWORD_DEFINE";
+    case TokenType::TOKEN_KEYWORD_TRUE:
+      return "TOKEN_KEYWORD_DEFINE";
+    case TokenType::TOKEN_KEYWORD_FALSE:
+      return "TOKEN_KEYWORD_FALSE";
     case TokenType::TOKEN_SEMICOLON:
       return "TOKEN_SEMICOLON";
     case TokenType::TOKEN_COLON:

@@ -36,7 +36,8 @@ enum class TokenType {
   TOKEN_KEYWORD_LET,     // unmutable variabiable declaration
   TOKEN_KEYWORD_MUT,     // mutable variabiable declaration
   TOKEN_KEYWORD_DEFINE,  // compile time known constant declaration
-
+  TOKEN_KEYWORD_TRUE,
+  TOKEN_KEYWORD_FALSE,
   // Specials
   TOKEN_ERROR
 };

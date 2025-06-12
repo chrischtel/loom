@@ -76,6 +76,12 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
     const LoomToken& token = previous();
     return std::make_unique<StringLiteral>(token.location, token.value);
   }
+  if (match(TokenType::TOKEN_KEYWORD_TRUE)) {
+    return std::make_unique<BooleanLiteral>(previous().location, true);
+  }
+  if (match(TokenType::TOKEN_KEYWORD_FALSE)) {
+    return std::make_unique<BooleanLiteral>(previous().location, false);
+  }
 
   if (match(TokenType::TOKEN_LEFT_PAREN)) {
     std::unique_ptr<ExprNode> expr = parseExpression();

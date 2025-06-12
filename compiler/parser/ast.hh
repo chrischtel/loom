@@ -13,6 +13,7 @@ enum class VarDeclKind { LET, MUT, DEFINE };
 class NumberLiteral;
 class Identifier;
 class StringLiteral;
+class BooleanLiteral;
 class AssignmentExpr;
 class BinaryExpr;
 class UnaryExpr;
@@ -26,6 +27,7 @@ class ASTVisitor {
   virtual ~ASTVisitor() = default;
   virtual std::unique_ptr<TypeNode> visit(NumberLiteral& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(StringLiteral& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(BooleanLiteral& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(Identifier& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(AssignmentExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(BinaryExpr& node) = 0;
@@ -85,9 +87,21 @@ class NumberLiteral : public ExprNode {
   }
 };
 
-// ... und so weiter für ALLE deine anderen Knoten.
-// Jede `accept`-Methode muss `std::unique_ptr<TypeNode> accept(...) override`
-// sein. Hier sind die restlichen als Beispiel:
+class BooleanLiteral : public ExprNode {
+ public:
+  bool value;
+
+  BooleanLiteral(const LoomSourceLocation& loc, bool val)
+      : ExprNode(loc), value(val) {}
+
+  std::string toString() const override {
+    return "BooleanLiteral(" + std::string(value ? "true" : "false") + ")";
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
 
 class Identifier : public ExprNode {
  public:

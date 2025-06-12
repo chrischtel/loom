@@ -111,6 +111,11 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(NumberLiteral& node) {
   }
 }
 
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BooleanLiteral& node) {
+  // Ein BooleanLiteral hat immer den Typ "bool".
+  return std::make_unique<TypeNode>(node.location, "bool");
+}
+
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StringLiteral& node) {
   return std::make_unique<TypeNode>(node.location, "string");
 }
