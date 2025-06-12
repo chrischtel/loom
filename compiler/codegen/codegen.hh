@@ -26,6 +26,9 @@ class ASTNode;
 class NumberLiteral;
 class StringLiteral;
 class VarDeclNode;
+class IfStmtNode;
+class ExprStmtNode;
+class FunctionCallExpr;
 class TypeNode;
 class IntegerLiteralTypeNode;
 class FloatLiteralTypeNode;
@@ -65,6 +68,9 @@ class CodeGen {
   llvm::Value* codegen(NumberLiteral& node);
   llvm::Value* codegen(StringLiteral& node);
   llvm::Value* codegen(VarDeclNode& node);
+  llvm::Value* codegen(IfStmtNode& node);
+  llvm::Value* codegen(ExprStmtNode& node);
+  llvm::Value* codegen(FunctionCallExpr& node);
   llvm::Value* codegen(BinaryExpr& node);
   llvm::Value* codegen(Identifier& node);
 

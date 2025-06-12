@@ -6,6 +6,8 @@ static const std::unordered_map<std::string_view, TokenType> keywords = {
     {"let", TokenType::TOKEN_KEYWORD_LET},
     {"mut", TokenType::TOKEN_KEYWORD_MUT},
     {"define", TokenType::TOKEN_KEYWORD_DEFINE},
+    {"if", TokenType::TOKEN_KEYWORD_IF},
+    {"else", TokenType::TOKEN_KEYWORD_ELSE},
     {"true", TokenType::TOKEN_KEYWORD_TRUE},
     {"false", TokenType::TOKEN_KEYWORD_FALSE},
 };
@@ -183,6 +185,8 @@ LoomToken Scanner::scanNextToken() {
       return makeToken(TokenType::TOKEN_SEMICOLON);
     case ':':
       return makeToken(TokenType::TOKEN_COLON);
+    case ',':
+      return makeToken(TokenType::TOKEN_COMMA);
     case '+':
       return makeToken(TokenType::TOKEN_PLUS);
     case '-':
@@ -239,14 +243,20 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_MUT";
     case TokenType::TOKEN_KEYWORD_DEFINE:
       return "TOKEN_KEYWORD_DEFINE";
+    case TokenType::TOKEN_KEYWORD_IF:
+      return "TOKEN_KEYWORD_IF";
+    case TokenType::TOKEN_KEYWORD_ELSE:
+      return "TOKEN_KEYWORD_ELSE";
     case TokenType::TOKEN_KEYWORD_TRUE:
-      return "TOKEN_KEYWORD_DEFINE";
+      return "TOKEN_KEYWORD_TRUE";
     case TokenType::TOKEN_KEYWORD_FALSE:
       return "TOKEN_KEYWORD_FALSE";
     case TokenType::TOKEN_SEMICOLON:
       return "TOKEN_SEMICOLON";
     case TokenType::TOKEN_COLON:
       return "TOKEN_COLON";
+    case TokenType::TOKEN_COMMA:
+      return "TOKEN_COMMA";
     case TokenType::TOKEN_EQUAL:
       return "TOKEN_EQUAL";
     case TokenType::TOKEN_EQUAL_EQUAL:

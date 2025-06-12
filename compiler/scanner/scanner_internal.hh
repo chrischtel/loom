@@ -8,10 +8,10 @@ enum class TokenType {
   TOKEN_WHITESPACE,
   TOKEN_NEWLINE,
   TOKEN_EOF,
-
   // 1-char tokens
   TOKEN_SEMICOLON,
   TOKEN_COLON,
+  TOKEN_COMMA,
   TOKEN_EQUAL,
   TOKEN_EQUAL_EQUAL,
   TOKEN_SLASH,
@@ -31,11 +31,12 @@ enum class TokenType {
 
   // Identifiers
   TOKEN_IDENTIFIER,
-
   // Keywords
   TOKEN_KEYWORD_LET,     // unmutable variabiable declaration
   TOKEN_KEYWORD_MUT,     // mutable variabiable declaration
   TOKEN_KEYWORD_DEFINE,  // compile time known constant declaration
+  TOKEN_KEYWORD_IF,      // if statement
+  TOKEN_KEYWORD_ELSE,    // else statement
   TOKEN_KEYWORD_TRUE,
   TOKEN_KEYWORD_FALSE,
   // Specials

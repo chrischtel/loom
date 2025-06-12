@@ -269,15 +269,49 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BinaryExpr& node) {
   if (!left_type || !right_type) return nullptr;
 
   // Check if the types are compatible for binary operations
-  if (!left_type->isEqualTo(right_type.get())) {
+  // Special handling for integer literal to integer type compatibility
+  bool types_compatible = false;
+  std::unique_ptr<TypeNode> result_type = nullptr;
+
+  if (left_type->isEqualTo(right_type.get())) {
+    // Types are exactly equal
+    types_compatible = true;
+    result_type = left_type->accept(*this);
+  } else {
+    // Check for integer literal compatibility
+    auto* left_int_literal =
+        dynamic_cast<IntegerLiteralTypeNode*>(left_type.get());
+    auto* right_int_literal =
+        dynamic_cast<IntegerLiteralTypeNode*>(right_type.get());
+    auto* left_int_type = dynamic_cast<IntegerTypeNode*>(left_type.get());
+    auto* right_int_type = dynamic_cast<IntegerTypeNode*>(right_type.get());
+
+    if (left_int_literal && right_int_type) {
+      // Left is literal, right is concrete type - use right type
+      types_compatible = true;
+      result_type = right_type->accept(*this);
+    } else if (left_int_type && right_int_literal) {
+      // Left is concrete type, right is literal - use left type
+      types_compatible = true;
+      result_type = left_type->accept(*this);
+    }
+  }
+
+  if (!types_compatible) {
     error(node.op.location, "Type mismatch for operator '" + node.op.value +
                                 "': '" + left_type->getTypeName() + "' and '" +
                                 right_type->getTypeName() + "'.");
     return nullptr;
   }
 
-  // Return a copy of the left operand's type
-  return left_type->accept(*this);
+  // For comparison operators (==, !=, <, >, <=, >=), return boolean type
+  if (node.op.value == "==" || node.op.value == "!=" || node.op.value == "<" ||
+      node.op.value == ">" || node.op.value == "<=" || node.op.value == ">=") {
+    return std::make_unique<BooleanTypeNode>(node.op.location);
+  }
+
+  // For other operators, return the result type
+  return result_type;
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(IntegerTypeNode& node) {
@@ -310,4 +344,54 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FloatLiteralTypeNode& node) {
   // Create a copy of the float literal type
   return std::make_unique<FloatLiteralTypeNode>(node.location, node.value);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(IfStmtNode& node) {
+  // Analyze the condition - it must be boolean
+  if (node.condition) {
+    std::unique_ptr<TypeNode> condition_type = node.condition->accept(*this);
+    if (condition_type &&
+        !dynamic_cast<BooleanTypeNode*>(condition_type.get())) {
+      error(node.location, "If condition must be boolean type.");
+    }
+  }
+
+  // Analyze then body
+  for (const auto& stmt : node.then_body) {
+    if (stmt) {
+      stmt->accept(*this);
+    }
+  }
+
+  // Analyze else body (if present)
+  for (const auto& stmt : node.else_body) {
+    if (stmt) {
+      stmt->accept(*this);
+    }
+  }
+
+  return nullptr;  // If statements don't return a value
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionCallExpr& node) {
+  // For now, we only support the built-in "print" function
+  if (node.function_name == "print") {
+    // Print function expects exactly one argument
+    if (node.arguments.size() != 1) {
+      error(node.location, "print() function expects exactly one argument.");
+      return nullptr;
+    }
+
+    // Analyze the argument type
+    if (node.arguments[0]) {
+      std::unique_ptr<TypeNode> arg_type = node.arguments[0]->accept(*this);
+      // print can accept any type, so we don't need to check it
+    }
+
+    // print function returns void (no return value)
+    return nullptr;
+  } else {
+    error(node.location, "Unknown function: " + node.function_name);
+    return nullptr;
+  }
 }

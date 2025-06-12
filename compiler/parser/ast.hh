@@ -19,6 +19,8 @@ class BinaryExpr;
 class UnaryExpr;
 class VarDeclNode;
 class ExprStmtNode;
+class IfStmtNode;
+class FunctionCallExpr;
 class TypeNode;
 class IntegerTypeNode;
 class FloatTypeNode;
@@ -40,6 +42,8 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(UnaryExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(VarDeclNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(ExprStmtNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(IfStmtNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(FunctionCallExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(TypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IntegerTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FloatTypeNode& node) = 0;
@@ -433,6 +437,66 @@ class ExprStmtNode : public StmtNode {
   std::string toString() const override {
     return "ExprStmt(" + (expression ? expression->toString() : "null") + ")";
   }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// IfStmtNode for if-else statements
+class IfStmtNode : public StmtNode {
+ public:
+  std::unique_ptr<ExprNode> condition;
+  std::vector<std::unique_ptr<StmtNode>> then_body;
+  std::vector<std::unique_ptr<StmtNode>> else_body;  // optional
+
+  IfStmtNode(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> cond,
+             std::vector<std::unique_ptr<StmtNode>> then_stmts,
+             std::vector<std::unique_ptr<StmtNode>> else_stmts = {})
+      : StmtNode(loc),
+        condition(std::move(cond)),
+        then_body(std::move(then_stmts)),
+        else_body(std::move(else_stmts)) {}
+
+  std::string toString() const override {
+    std::string result =
+        "IfStmt(cond: " + (condition ? condition->toString() : "null") +
+        ", then: [";
+    for (const auto& stmt : then_body) {
+      result += stmt->toString() + ", ";
+    }
+    result += "], else: [";
+    for (const auto& stmt : else_body) {
+      result += stmt->toString() + ", ";
+    }
+    result += "])";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// FunctionCallExpr for print() calls
+class FunctionCallExpr : public ExprNode {
+ public:
+  std::string function_name;
+  std::vector<std::unique_ptr<ExprNode>> arguments;
+
+  FunctionCallExpr(const LoomSourceLocation& loc, const std::string& name,
+                   std::vector<std::unique_ptr<ExprNode>> args)
+      : ExprNode(loc), function_name(name), arguments(std::move(args)) {}
+
+  std::string toString() const override {
+    std::string result = "FunctionCall(" + function_name + "(";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += arguments[i] ? arguments[i]->toString() : "null";
+    }
+    result += "))";
+    return result;
+  }
+
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
     return visitor.visit(*this);
   }

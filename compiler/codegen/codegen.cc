@@ -201,10 +201,21 @@ llvm::Value* CodeGen::codegenWithTargetType(ASTNode& node,
 // --- Codegen Dispatch ---
 llvm::Value* CodeGen::codegen(ASTNode& node) {
   std::cout << "[CodeGen] Dispatching node: " << node.toString() << std::endl;
-
   // Die Reihenfolge ist wichtig: von spezifisch zu allgemein
   if (auto* n = dynamic_cast<VarDeclNode*>(&node)) {
     std::cout << "[CodeGen] Processing VarDeclNode" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<IfStmtNode*>(&node)) {
+    std::cout << "[CodeGen] Processing IfStmtNode" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<ExprStmtNode*>(&node)) {
+    std::cout << "[CodeGen] Processing ExprStmtNode" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<FunctionCallExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing FunctionCallExpr" << std::endl;
     return codegen(*n);
   }
   if (auto* n = dynamic_cast<BinaryExpr*>(&node)) {
@@ -257,9 +268,16 @@ llvm::Value* CodeGen::codegen(StringLiteral& node) {
   std::cout << "[CodeGen] Generating StringLiteral: \"" << node.value << "\""
             << std::endl;
 
+  // Remove quotes from the string value
+  std::string str_value = node.value;
+  if (str_value.size() >= 2 && str_value.front() == '"' &&
+      str_value.back() == '"') {
+    str_value = str_value.substr(1, str_value.size() - 2);
+  }
+
   // Create a global string constant
   llvm::Constant* strConstant =
-      llvm::ConstantDataArray::getString(*context, node.value, true);
+      llvm::ConstantDataArray::getString(*context, str_value, true);
 
   // Create a global variable to hold the string
   llvm::GlobalVariable* globalStr = new llvm::GlobalVariable(
@@ -364,9 +382,7 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
     }
     if (R->getType()->isIntegerTy()) {
       R = builder->CreateSIToFP(R, builder->getDoubleTy(), "int2fp");
-    }
-
-    // Generate floating point operations
+    }  // Generate floating point operations
     switch (node.op.type) {
       case TokenType::TOKEN_PLUS:
         return builder->CreateFAdd(L, R, "fadd.tmp");
@@ -376,11 +392,12 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
         return builder->CreateFMul(L, R, "fmul.tmp");
       case TokenType::TOKEN_SLASH:
         return builder->CreateFDiv(L, R, "fdiv.tmp");
+      case TokenType::TOKEN_EQUAL_EQUAL:
+        return builder->CreateFCmpOEQ(L, R, "fcmp.tmp");
       default:
         throw std::runtime_error("CodeGen: Unknown binary operator for float.");
     }
-  } else {
-    // Both operands are integers - generate integer operations
+  } else {  // Both operands are integers - generate integer operations
     switch (node.op.type) {
       case TokenType::TOKEN_PLUS:
         return builder->CreateAdd(L, R, "add.tmp");
@@ -391,11 +408,134 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
       case TokenType::TOKEN_SLASH:
         return builder->CreateSDiv(L, R,
                                    "div.tmp");  // SDiv für Signed Integers
+      case TokenType::TOKEN_EQUAL_EQUAL:
+        return builder->CreateICmpEQ(L, R, "icmp.tmp");
       default:
         throw std::runtime_error(
             "CodeGen: Unknown binary operator for integer.");
     }
   }
+}
+
+llvm::Value* CodeGen::codegen(IfStmtNode& node) {
+  std::cout << "[CodeGen] Generating IfStmtNode" << std::endl;
+
+  // Generate condition
+  llvm::Value* condition_val = codegen(*node.condition);
+  if (!condition_val) return nullptr;
+
+  // Get current function
+  llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+
+  // Create basic blocks
+  llvm::BasicBlock* then_block =
+      llvm::BasicBlock::Create(*context, "if.then", current_function);
+  llvm::BasicBlock* else_block = nullptr;
+  llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(*context, "if.end");
+
+  if (!node.else_body.empty()) {
+    else_block = llvm::BasicBlock::Create(*context, "if.else");
+  }
+
+  // Branch based on condition
+  if (else_block) {
+    builder->CreateCondBr(condition_val, then_block, else_block);
+  } else {
+    builder->CreateCondBr(condition_val, then_block, merge_block);
+  }
+
+  // Generate then block
+  builder->SetInsertPoint(then_block);
+  for (const auto& stmt : node.then_body) {
+    codegen(*stmt);
+  }
+  if (!builder->GetInsertBlock()->getTerminator()) {
+    builder->CreateBr(merge_block);
+  }
+  // Generate else block (if present)
+  if (else_block) {
+    else_block->insertInto(current_function);
+    builder->SetInsertPoint(else_block);
+    for (const auto& stmt : node.else_body) {
+      codegen(*stmt);
+    }
+    if (!builder->GetInsertBlock()->getTerminator()) {
+      builder->CreateBr(merge_block);
+    }
+  }
+
+  // Continue with merge block
+  merge_block->insertInto(current_function);
+  builder->SetInsertPoint(merge_block);
+  return nullptr;  // If statements don't return values
+}
+
+llvm::Value* CodeGen::codegen(ExprStmtNode& node) {
+  std::cout << "[CodeGen] Generating ExprStmtNode" << std::endl;
+
+  // For expression statements, we just evaluate the expression
+  // The result value is not used, but the expression may have side effects
+  llvm::Value* result = codegen(*node.expression);
+
+  return result;  // Return the value in case it's needed
+}
+
+llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {
+  std::cout << "[CodeGen] Generating FunctionCallExpr: " << node.function_name
+            << std::endl;
+
+  if (node.function_name == "print") {
+    // Declare printf if not already declared
+    llvm::Function* printf_func = module->getFunction("printf");
+    if (!printf_func) {
+      // printf has signature: int printf(const char* format, ...)
+      llvm::FunctionType* printf_type = llvm::FunctionType::get(
+          builder->getInt32Ty(), {llvm::PointerType::getUnqual(*context)},
+          true  // vararg
+      );
+      printf_func = llvm::Function::Create(
+          printf_type, llvm::Function::ExternalLinkage, "printf", module.get());
+    }
+
+    if (node.arguments.size() != 1) {
+      throw std::runtime_error("print() expects exactly one argument");
+    }
+
+    // Generate argument
+    llvm::Value* arg = codegen(*node.arguments[0]);
+    if (!arg) return nullptr;
+
+    // Create format string for the argument type
+    llvm::Value* format_str = nullptr;
+    if (arg->getType()->isIntegerTy()) {
+      // Integer argument - use "%d\n" format
+      llvm::Constant* format_const =
+          llvm::ConstantDataArray::getString(*context, "%d\n", true);
+      llvm::GlobalVariable* format_global = new llvm::GlobalVariable(
+          *module, format_const->getType(), true,
+          llvm::GlobalValue::PrivateLinkage, format_const, ".str.fmt.int");
+      format_str = builder->CreateInBoundsGEP(
+          format_const->getType(), format_global,
+          {builder->getInt32(0), builder->getInt32(0)}, "fmt.ptr");
+    } else if (arg->getType()->isPointerTy()) {
+      // String argument - use "%s\n" format
+      llvm::Constant* format_const =
+          llvm::ConstantDataArray::getString(*context, "%s\n", true);
+      llvm::GlobalVariable* format_global = new llvm::GlobalVariable(
+          *module, format_const->getType(), true,
+          llvm::GlobalValue::PrivateLinkage, format_const, ".str.fmt.str");
+      format_str = builder->CreateInBoundsGEP(
+          format_const->getType(), format_global,
+          {builder->getInt32(0), builder->getInt32(0)}, "fmt.ptr");
+    } else {
+      throw std::runtime_error("Unsupported argument type for print()");
+    }
+
+    // Call printf
+    return builder->CreateCall(printf_func, {format_str, arg}, "printf.call");
+  }
+
+  throw std::runtime_error("Unknown function: " + node.function_name);
 }
 
 // --- Integrated Compilation Methods (like Kaleidoscope) ---

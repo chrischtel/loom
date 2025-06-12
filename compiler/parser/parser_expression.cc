@@ -9,7 +9,7 @@ std::unique_ptr<ExprNode> Parser::parseExpression() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseAssignment() {
-  std::unique_ptr<ExprNode> expr = parseTerm();
+  std::unique_ptr<ExprNode> expr = parseEquality();
 
   if (match(TokenType::TOKEN_EQUAL)) {
     const LoomToken& equals = previous();
@@ -22,6 +22,18 @@ std::unique_ptr<ExprNode> Parser::parseAssignment() {
 
     error(equals, "Invalid assignment target.");
     return nullptr;
+  }
+
+  return expr;
+}
+
+std::unique_ptr<ExprNode> Parser::parseEquality() {
+  std::unique_ptr<ExprNode> expr = parseTerm();
+
+  while (match(TokenType::TOKEN_EQUAL_EQUAL)) {
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseTerm();
+    expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
   }
 
   return expr;
@@ -58,8 +70,7 @@ std::unique_ptr<ExprNode> Parser::parseUnary() {
 
     return std::make_unique<UnaryExpr>(op, std::move(right));
   }
-
-  return parsePrimary();
+  return parseCall();
 }
 
 std::unique_ptr<ExprNode> Parser::parsePrimary() {
@@ -148,4 +159,39 @@ std::unique_ptr<TypeNode> Parser::parseType() {
   // For now, treat unknown types as generic TypeNodes
   // In a real compiler, this would be an error
   throw std::runtime_error("Unknown type: " + type_name);
+}
+
+std::unique_ptr<ExprNode> Parser::parseCall() {
+  std::unique_ptr<ExprNode> expr = parsePrimary();
+
+  while (true) {
+    if (match(TokenType::TOKEN_LEFT_PAREN)) {
+      expr = finishCall(std::move(expr));
+    } else {
+      break;
+    }
+  }
+
+  return expr;
+}
+
+std::unique_ptr<ExprNode> Parser::finishCall(std::unique_ptr<ExprNode> callee) {
+  std::vector<std::unique_ptr<ExprNode>> arguments;
+
+  if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+    do {
+      arguments.push_back(parseExpression());
+    } while (match(TokenType::TOKEN_COMMA));
+  }
+
+  consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after arguments.");
+
+  // Check if this is a function call (identifier followed by parentheses)
+  if (auto* identifier = dynamic_cast<Identifier*>(callee.get())) {
+    return std::make_unique<FunctionCallExpr>(
+        identifier->location, identifier->name, std::move(arguments));
+  }
+
+  error(previous(), "Only identifiers can be called as functions.");
+  return nullptr;
 }
