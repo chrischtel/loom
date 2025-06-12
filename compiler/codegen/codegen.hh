@@ -9,8 +9,16 @@
 // LLVM-Header
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Triple.h"
 
 // Forward-Deklarationen
 class StmtNode;  // Wir arbeiten mit der Basisklasse für Statements
@@ -29,9 +37,15 @@ class CodeGen {
   void generate(const std::vector<std::unique_ptr<StmtNode>>& ast);
 
   void print_ir() const;
-
   // Write IR to file
   void writeIRToFile(const std::string& filename) const;
+
+  // Integrated compilation methods (like Kaleidoscope)
+  bool compileToObjectFile(const std::string& filename) const;
+  bool compileToExecutable(const std::string& objectFilename,
+                           const std::string& executableFilename) const;
+  // Initialize LLVM targets (call once at startup)
+  bool initializeLLVMTargets();
 
   // Public access to LLVM module for external compilation
   std::unique_ptr<llvm::Module> module;

@@ -110,11 +110,34 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
                              "' without an explicit type or an initializer.");
     return nullptr;  // Beende die Analyse für diese fehlerhafte Deklaration.
   }
-  // Schritt 5: Definiere die Variable in der Symboltabelle.
+  // Schritt 5: Update the node with the inferred type if it wasn't explicitly
+  // set
+  if (!node.type && final_type) {
+    // Create a copy of the final_type for the node
+    if (auto int_literal =
+            dynamic_cast<IntegerLiteralTypeNode*>(final_type.get())) {
+      node.type = std::make_unique<IntegerLiteralTypeNode>(
+          int_literal->location, int_literal->value);
+    } else if (auto float_literal =
+                   dynamic_cast<FloatLiteralTypeNode*>(final_type.get())) {
+      node.type = std::make_unique<FloatLiteralTypeNode>(
+          float_literal->location, float_literal->value);
+    } else if (auto int_type =
+                   dynamic_cast<IntegerTypeNode*>(final_type.get())) {
+      node.type = std::make_unique<IntegerTypeNode>(
+          int_type->location, int_type->bit_width, int_type->is_signed);
+    } else if (auto float_type =
+                   dynamic_cast<FloatTypeNode*>(final_type.get())) {
+      node.type = std::make_unique<FloatTypeNode>(float_type->location,
+                                                  float_type->bit_width);
+    }
+    // Add other type cases as needed
+  }
+
+  // Schritt 6: Definiere die Variable in der Symboltabelle.
   SymbolInfo info;
   info.kind = node.kind;
   info.type = std::shared_ptr<TypeNode>(final_type.release());
-
   if (!symbols.define(node.name, std::move(info))) {
     error(node.location,
           "Variable '" + node.name + "' is already declared in this scope.");

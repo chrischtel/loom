@@ -214,8 +214,7 @@ if(LOOM_USE_LLVM)
                 )
             endif()
         endif()
-        
-        # Link LLVM libraries
+          # Link LLVM libraries
         if(COMMAND llvm_map_components_to_libnames)
             # Use CMake config approach if available
             llvm_map_components_to_libnames(llvm_libs 
@@ -228,6 +227,8 @@ if(LOOM_USE_LLVM)
                 mcparser 
                 asmprinter 
                 x86codegen  # Add other targets as needed (aarch64codegen, etc.)
+                x86asmparser
+                x86disassembler
             )
             set(FINAL_LLVM_LIBS ${llvm_libs})
         else()

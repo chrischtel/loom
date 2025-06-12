@@ -9,6 +9,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"  // Nützlich zum Überprüfen des generierten Codes
+#include "llvm/Support/TargetSelect.h"  // For getDefaultTargetTriple
 #include "llvm/Support/raw_ostream.h"
 
 CodeGen::CodeGen() {
@@ -280,4 +281,99 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
             << std::endl;
 
   return nullptr;
+}
+
+// --- Integrated Compilation Methods (like Kaleidoscope) ---
+
+bool CodeGen::initializeLLVMTargets() {
+  // Initialize all targets for code generation
+  llvm::InitializeAllTargetInfos();
+  llvm::InitializeAllTargets();
+  llvm::InitializeAllTargetMCs();
+  llvm::InitializeAllAsmParsers();
+  llvm::InitializeAllAsmPrinters();
+
+  std::cout << "[CodeGen] LLVM targets initialized successfully" << std::endl;
+  return true;
+}
+
+bool CodeGen::compileToObjectFile(const std::string& filename) const {
+  std::cout << "[CodeGen] Compiling to object file: " << filename << std::endl;
+
+  // Get the target triple for the current system  // Use Windows x64 target
+  // triple for now
+  std::string targetTripleStr = "x86_64-pc-windows-msvc";
+  llvm::Triple targetTriple(targetTripleStr);
+  module->setTargetTriple(targetTriple);
+  std::string error;
+  auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, error);
+
+  if (!target) {
+    std::cerr << "[CodeGen] Error: " << error << std::endl;
+    return false;
+  }
+  auto CPU = "generic";
+  auto features = "";
+
+  llvm::TargetOptions opt;
+  auto relocationModel = llvm::Reloc::PIC_;
+  auto targetMachine = target->createTargetMachine(targetTriple, CPU, features,
+                                                   opt, relocationModel);
+
+  module->setDataLayout(targetMachine->createDataLayout());
+
+  std::error_code EC;
+  llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
+
+  if (EC) {
+    std::cerr << "[CodeGen] Could not open file: " << EC.message() << std::endl;
+    return false;
+  }
+
+  llvm::legacy::PassManager pass;
+  auto fileType = llvm::CodeGenFileType::ObjectFile;
+
+  if (targetMachine->addPassesToEmitFile(pass, dest, nullptr, fileType)) {
+    std::cerr << "[CodeGen] TargetMachine can't emit a file of this type"
+              << std::endl;
+    return false;
+  }
+
+  pass.run(*module);
+  dest.flush();
+
+  std::cout << "[CodeGen] Successfully wrote object file: " << filename
+            << std::endl;
+  return true;
+}
+
+bool CodeGen::compileToExecutable(const std::string& objectFilename,
+                                  const std::string& executableFilename) const {
+  std::cout << "[CodeGen] Linking object file to executable..." << std::endl;
+
+  // Use system linker (could be ld, link.exe, etc.)
+  std::string linkCmd;
+
+#ifdef _WIN32
+  // Windows: Use link.exe or lld-link
+  linkCmd =
+      "clang \"" + objectFilename + "\" -o \"" + executableFilename + "\"";
+#else
+  // Unix/Linux: Use ld or clang
+  linkCmd =
+      "clang \"" + objectFilename + "\" -o \"" + executableFilename + "\"";
+#endif
+
+  std::cout << "[CodeGen] Running linker: " << linkCmd << std::endl;
+
+  int result = std::system(linkCmd.c_str());
+  if (result == 0) {
+    std::cout << "[CodeGen] Successfully linked executable: "
+              << executableFilename << std::endl;
+    return true;
+  } else {
+    std::cerr << "[CodeGen] Linking failed with exit code: " << result
+              << std::endl;
+    return false;
+  }
 }

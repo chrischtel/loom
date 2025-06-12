@@ -87,7 +87,8 @@ int main(int argc, char* argv[]) {
       std::cout << "--- Generated LLVM IR ---" << std::endl;
       code_generator.print_ir();
       std::cout << "-------------------------"
-                << std::endl;  // --- PHASE 5: COMPILE TO EXECUTABLE ---
+                << std::endl;  // --- PHASE 5: COMPILE TO EXECUTABLE (INTEGRATED
+                               // LLVM APPROACH) ---
       std::cout << std::endl << "--- Compiling to Executable ---" << std::endl;
 
       // Generate output filename (replace .loom with .exe)
@@ -98,31 +99,30 @@ int main(int argc, char* argv[]) {
       }
       output_name += ".exe";
 
-      // Generate temporary IR file
-      std::string ir_filename = output_name + ".ll";
-
-      // Write IR to file
-      code_generator.writeIRToFile(ir_filename);
-      std::cout << "Generated IR file: " << ir_filename << std::endl;
-
-      // Compile IR to executable using clang
-      std::string compile_cmd =
-          "clang \"" + ir_filename + "\" -o \"" + output_name + "\"";
-      std::cout << "Running: " << compile_cmd << std::endl;
-
-      int result = system(compile_cmd.c_str());
-      if (result == 0) {
-        std::cout << "Successfully compiled to: " << output_name << std::endl;
-
-        // Clean up IR file
-        std::filesystem::remove(ir_filename);
-        std::cout << "Cleaned up temporary IR file." << std::endl;
-      } else {
-        std::cerr << "Error: Compilation failed with exit code " << result
-                  << std::endl;
+      // Initialize LLVM targets for object file generation
+      if (!code_generator.initializeLLVMTargets()) {
+        std::cerr << "Error: Failed to initialize LLVM targets" << std::endl;
+        return 1;
       }
 
-      // --- ENDE NEUER TEIL ---
+      // Generate object file directly using LLVM
+      std::string object_filename = output_name + ".o";
+      if (!code_generator.compileToObjectFile(object_filename)) {
+        std::cerr << "Error: Failed to generate object file" << std::endl;
+        return 1;
+      }
+
+      // Link object file to executable
+      if (!code_generator.compileToExecutable(object_filename, output_name)) {
+        std::cerr << "Error: Failed to link executable" << std::endl;
+        return 1;
+      }
+
+      // Clean up object file
+      std::filesystem::remove(object_filename);
+      std::cout << "Cleaned up temporary object file." << std::endl;
+
+      std::cout << "Successfully compiled to: " << output_name << std::endl;
 
     } else {
       std::cout << "Semantic analysis failed!" << std::endl;
