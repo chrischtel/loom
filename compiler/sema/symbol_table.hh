@@ -1,3 +1,4 @@
+// symbol_table.hh
 #pragma once
 
 #include <memory>
@@ -9,6 +10,7 @@
 
 struct SymbolInfo {
   VarDeclKind kind;
+  std::shared_ptr<TypeNode> type;
 };
 
 class SymbolTable {
@@ -17,11 +19,10 @@ class SymbolTable {
 
  public:
   SymbolTable();
-
   void enterScope();
   void leaveScope();
-
-  bool define(const std::string& name, const SymbolInfo& info);
-
+  // KORREKTUR: Nimmt info per Wert, ist nicht const
+  bool define(const std::string& name, SymbolInfo info);
+  // KORREKTUR: Ist korrekt const
   const SymbolInfo* lookup(const std::string& name) const;
 };

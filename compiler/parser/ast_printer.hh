@@ -8,16 +8,15 @@
 class ASTPrinter : public ASTVisitor {
  public:
   void print(const std::vector<std::unique_ptr<StmtNode>>& ast);
-
-  void visit(NumberLiteral& node) override;
-  void visit(Identifier& node) override;
-  void visit(StringLiteral& node) override;
-  void visit(AssignmentExpr& node) override;
-  void visit(BinaryExpr& node) override;
-  void visit(VarDeclNode& node) override;
-  void visit(ExprStmtNode& node) override;
-  void visit(UnaryExpr& node) override;
-  void visit(TypeNode& node) override;
+  std::unique_ptr<TypeNode> visit(NumberLiteral& node) override;
+  std::unique_ptr<TypeNode> visit(Identifier& node) override;
+  std::unique_ptr<TypeNode> visit(StringLiteral& node) override;
+  std::unique_ptr<TypeNode> visit(AssignmentExpr& node) override;
+  std::unique_ptr<TypeNode> visit(BinaryExpr& node) override;
+  std::unique_ptr<TypeNode> visit(VarDeclNode& node) override;
+  std::unique_ptr<TypeNode> visit(ExprStmtNode& node) override;
+  std::unique_ptr<TypeNode> visit(UnaryExpr& node) override;
+  std::unique_ptr<TypeNode> visit(TypeNode& node) override;
 
  private:
   void indent();

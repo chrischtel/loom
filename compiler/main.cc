@@ -9,7 +9,7 @@
 #include "parser/ast_printer.hh"
 #include "parser/parser_internal.hh"
 #include "scanner/scanner_internal.hh"
-#include "sema/semantic_analyze.hh"
+#include "sema/semantic_analyzer.hh"
 
 std::string readFile(const std::string& filename) {
   std::ifstream file(filename);

@@ -19,7 +19,7 @@ void ASTPrinter::print(const std::vector<std::unique_ptr<StmtNode>>& ast) {
   indentation_level--;
 }
 
-void ASTPrinter::visit(VarDeclNode& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(VarDeclNode& node) {
   indent();
   std::string kind_str;
   switch (node.kind) {
@@ -44,9 +44,10 @@ void ASTPrinter::visit(VarDeclNode& node) {
     node.initializer->accept(*this);
     indentation_level--;
   }
+  return nullptr;
 }
 
-void ASTPrinter::visit(ExprStmtNode& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(ExprStmtNode& node) {
   indent();
   std::cout << "- ExprStmt:" << std::endl;
   indentation_level++;
@@ -54,9 +55,10 @@ void ASTPrinter::visit(ExprStmtNode& node) {
     node.expression->accept(*this);
   }
   indentation_level--;
+  return nullptr;
 }
 
-void ASTPrinter::visit(AssignmentExpr& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(AssignmentExpr& node) {
   indent();
   std::cout << "- Assignment(" << node.name << "):" << std::endl;
   if (node.value) {
@@ -67,9 +69,10 @@ void ASTPrinter::visit(AssignmentExpr& node) {
     node.value->accept(*this);
     indentation_level--;
   }
+  return nullptr;
 }
 
-void ASTPrinter::visit(BinaryExpr& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(BinaryExpr& node) {
   indent();
   std::cout << "- Binary(" << node.op.value << ")" << std::endl;
   indentation_level++;
@@ -84,9 +87,10 @@ void ASTPrinter::visit(BinaryExpr& node) {
     node.right->accept(*this);
   }
   indentation_level--;
+  return nullptr;
 }
 
-void ASTPrinter::visit(UnaryExpr& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(UnaryExpr& node) {
   indent();
   std::cout << "- Unary(" << node.op.value << ")" << std::endl;
   indentation_level++;
@@ -96,22 +100,27 @@ void ASTPrinter::visit(UnaryExpr& node) {
     node.right->accept(*this);
   }
   indentation_level--;
+  return nullptr;
 }
 
-void ASTPrinter::visit(NumberLiteral& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(NumberLiteral& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
 }
-void ASTPrinter::visit(Identifier& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(Identifier& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
 }
-void ASTPrinter::visit(StringLiteral& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(StringLiteral& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
 }
 
-void ASTPrinter::visit(TypeNode& node) {
+std::unique_ptr<TypeNode> ASTPrinter::visit(TypeNode& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
+  return nullptr;
 }
