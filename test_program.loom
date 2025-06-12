@@ -1,5 +1,5 @@
 // Sample Loom program
-let x = 42;
+let x: i32 = 42;
 let message = "Hello World";
 define PI = 3.14159;
 
