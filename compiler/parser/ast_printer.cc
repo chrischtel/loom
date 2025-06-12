@@ -3,7 +3,7 @@
 
 void ASTPrinter::indent() {
   for (int i = 0; i < indentation_level; ++i) {
-    std::cout << "  ";  // Zwei Leerzeichen pro Einrückungsstufe
+    std::cout << "  ";
   }
 }
 
@@ -19,6 +19,8 @@ void ASTPrinter::print(const std::vector<std::unique_ptr<StmtNode>>& ast) {
   indentation_level--;
 }
 
+// --- KORRIGIERTE CONTAINER-METHODEN ---
+
 void ASTPrinter::visit(VarDeclNode& node) {
   indent();
   std::cout << "- VarDecl(" << node.name
@@ -27,11 +29,15 @@ void ASTPrinter::visit(VarDeclNode& node) {
   if (node.initializer) {
     indentation_level++;
     indent();
-    std::cout << "- Initializer: ";   // Kein Zeilenumbruch hier!
-    node.initializer->accept(*this);  // Lass das Kind sich selbst drucken
+    // Drucke das Label und einen Zeilenumbruch.
+    std::cout << "- Initializer:" << std::endl;
+    // Jetzt kann der Besucher des Kindes die nächste Zeile komplett für sich
+    // beanspruchen.
+    node.initializer->accept(*this);
     indentation_level--;
   }
 }
+
 void ASTPrinter::visit(ExprStmtNode& node) {
   indent();
   std::cout << "- ExprStmt:" << std::endl;
@@ -48,7 +54,8 @@ void ASTPrinter::visit(AssignmentExpr& node) {
   if (node.value) {
     indentation_level++;
     indent();
-    std::cout << "- Value: ";  // Kein Zeilenumbruch hier!
+    // Drucke das Label und einen Zeilenumbruch.
+    std::cout << "- Value:" << std::endl;
     node.value->accept(*this);
     indentation_level--;
   }
@@ -56,22 +63,21 @@ void ASTPrinter::visit(AssignmentExpr& node) {
 
 void ASTPrinter::visit(BinaryExpr& node) {
   indent();
-  std::cout << "Binary(" << node.op.value << ")" << std::endl;
+  std::cout << "- Binary(" << node.op.value << ")" << std::endl;
   indentation_level++;
   if (node.left) {
     indent();
-    std::cout << "- Left: ";
+    std::cout << "- Left:" << std::endl;
     node.left->accept(*this);
   }
   if (node.right) {
     indent();
-    std::cout << "- Right: ";
+    std::cout << "- Right:" << std::endl;
     node.right->accept(*this);
   }
   indentation_level--;
 }
 
-// Die "Blätter" des Baumes
 void ASTPrinter::visit(NumberLiteral& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
@@ -80,7 +86,6 @@ void ASTPrinter::visit(Identifier& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
 }
-
 void ASTPrinter::visit(StringLiteral& node) {
   indent();
   std::cout << "- " << node.toString() << std::endl;
