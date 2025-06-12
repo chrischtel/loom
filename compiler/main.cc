@@ -72,21 +72,17 @@ int main(int argc, char* argv[]) {
   if (!parser.hasError()) {
     std::cout << std::endl << "--- Running Semantic Analyzer ---" << std::endl;
     SemanticAnalyzer sema;
-    sema.analyze(ast);  // Rufe die Analyse auf dem AST auf
-
-    if (!sema.hasError()) {
-      std::cout << "Semantic analysis successful!" << std::endl;
-      // Gib den AST aus, um zu sehen, dass alles noch da ist
-      std::cout << "--- Abstract Syntax Tree ---" << std::endl;
-      ASTPrinter printer;
-      printer.print(ast);
-    } else {
-      std::cout << "Semantic analysis failed!" << std::endl;
-    }
-    std::cout << "--- Semantic Analyzer Finished ---" << std::endl;
+    sema.analyze(
+        ast);  // Rufe die Analyse auf dem AST auf    if (!sema.hasError()) {
+    std::cout << "Semantic analysis successful!" << std::endl;
+    // Print the AST
+    std::cout << "--- Abstract Syntax Tree ---" << std::endl;
+    ASTPrinter printer;
+    printer.print(ast);
   } else {
-    std::cout << "Parse failed! Skipping subsequent stages." << std::endl;
+    std::cout << "Semantic analysis failed!" << std::endl;
   }
+  std::cout << "--- Semantic Analyzer Finished ---" << std::endl;
 
   return 0;
 }

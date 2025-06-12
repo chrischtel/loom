@@ -166,19 +166,40 @@ if(LOOM_USE_LLVM)
     endif()
       if(LLVM_FOUND)
         message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-        
-        # Add LLVM include directories and definitions
+          # Add LLVM include directories and definitions
         if(TARGET loom_compiler_lib)
-            target_include_directories(loom_compiler_lib PRIVATE ${LLVM_INCLUDE_DIRS})
+            # Use SYSTEM to suppress warnings from LLVM headers
+            target_include_directories(loom_compiler_lib SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
             if(DEFINED LLVM_DEFINITIONS)
                 target_compile_definitions(loom_compiler_lib PRIVATE ${LLVM_DEFINITIONS})
+            endif()
+            
+            # Add specific warning suppressions for LLVM on Clang
+            if(LOOM_COMPILER STREQUAL "Clang" OR LOOM_COMPILER STREQUAL "Apple Clang")
+                target_compile_options(loom_compiler_lib PRIVATE
+                    -Wno-old-style-cast
+                    -Wno-sign-conversion
+                    -Wno-shorten-64-to-32
+                    -Wno-language-extension-token
+                )
             endif()
         endif()
         
         if(TARGET loom)
-            target_include_directories(loom PRIVATE ${LLVM_INCLUDE_DIRS})
+            # Use SYSTEM to suppress warnings from LLVM headers
+            target_include_directories(loom SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
             if(DEFINED LLVM_DEFINITIONS)
                 target_compile_definitions(loom PRIVATE ${LLVM_DEFINITIONS})
+            endif()
+            
+            # Add specific warning suppressions for LLVM on Clang
+            if(LOOM_COMPILER STREQUAL "Clang" OR LOOM_COMPILER STREQUAL "Apple Clang")
+                target_compile_options(loom PRIVATE
+                    -Wno-old-style-cast
+                    -Wno-sign-conversion
+                    -Wno-shorten-64-to-32
+                    -Wno-language-extension-token
+                )
             endif()
         endif()
         
