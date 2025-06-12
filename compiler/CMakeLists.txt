@@ -95,36 +95,132 @@ endif()
 
 # LLVM integration (optional)
 if(LOOM_USE_LLVM)
+    # Try to find LLVM using the config approach first
+    # Add custom LLVM build path
+    if(NOT DEFINED LLVM_DIR AND EXISTS "C:/dev/llvm-project/$installDir/lib/cmake/llvm")
+        set(LLVM_DIR "C:/dev/llvm-project/$installDir/lib/cmake/llvm" CACHE PATH "LLVM installation directory")
+        message(STATUS "Using custom LLVM build at: ${LLVM_DIR}")
+    endif()
+    
     find_package(LLVM CONFIG QUIET)
     
-    if(LLVM_FOUND)
+    # If that fails, try manual detection on Windows
+    if(NOT LLVM_FOUND AND WIN32)
+        message(STATUS "LLVM CONFIG not found, attempting manual detection...")
+          # Find llvm-config executable
+        find_program(LLVM_CONFIG_EXECUTABLE NAMES llvm-config llvm-config.exe
+            PATHS
+                "C:/dev/llvm-project/$installDir/bin"
+                "C:/Program Files/LLVM/bin"
+                "C:/Program Files (x86)/LLVM/bin"
+            DOC "LLVM configuration tool"
+        )
+        
+        if(LLVM_CONFIG_EXECUTABLE)
+            message(STATUS "Found llvm-config: ${LLVM_CONFIG_EXECUTABLE}")
+            
+            # Get LLVM version
+            execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --version
+                OUTPUT_VARIABLE LLVM_VERSION
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            
+            # Get LLVM include directories
+            execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --includedir
+                OUTPUT_VARIABLE LLVM_INCLUDE_DIRS
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            
+            # Get LLVM library directories
+            execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --libdir
+                OUTPUT_VARIABLE LLVM_LIBRARY_DIRS
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            
+            # Get LLVM libraries for our components
+            execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs core support target mc mcparser asmprinter
+                OUTPUT_VARIABLE LLVM_LIBRARIES_RAW
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            
+            # Get LLVM system libraries
+            execute_process(COMMAND ${LLVM_CONFIG_EXECUTABLE} --system-libs
+                OUTPUT_VARIABLE LLVM_SYSTEM_LIBS_RAW
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET  # Some versions don't support --system-libs
+            )
+            
+            # Convert library strings to lists
+            string(REPLACE " " ";" LLVM_LIBRARIES "${LLVM_LIBRARIES_RAW}")
+            string(REPLACE " " ";" LLVM_SYSTEM_LIBS "${LLVM_SYSTEM_LIBS_RAW}")
+            
+            # Mark as found
+            set(LLVM_FOUND TRUE)
+            set(LLVM_PACKAGE_VERSION ${LLVM_VERSION})
+            
+            message(STATUS "Manual LLVM detection successful:")
+            message(STATUS "  Version: ${LLVM_VERSION}")
+            message(STATUS "  Include: ${LLVM_INCLUDE_DIRS}")
+            message(STATUS "  LibDir:  ${LLVM_LIBRARY_DIRS}")
+        endif()
+    endif()
+      if(LLVM_FOUND)
         message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-        message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
         
         # Add LLVM include directories and definitions
         if(TARGET loom_compiler_lib)
             target_include_directories(loom_compiler_lib PRIVATE ${LLVM_INCLUDE_DIRS})
-            target_compile_definitions(loom_compiler_lib PRIVATE ${LLVM_DEFINITIONS})
+            if(DEFINED LLVM_DEFINITIONS)
+                target_compile_definitions(loom_compiler_lib PRIVATE ${LLVM_DEFINITIONS})
+            endif()
         endif()
         
         if(TARGET loom)
             target_include_directories(loom PRIVATE ${LLVM_INCLUDE_DIRS})
-            target_compile_definitions(loom PRIVATE ${LLVM_DEFINITIONS})
+            if(DEFINED LLVM_DEFINITIONS)
+                target_compile_definitions(loom PRIVATE ${LLVM_DEFINITIONS})
+            endif()
         endif()
         
-        # Find required LLVM components
-        llvm_map_components_to_libnames(llvm_libs core support)
+        # Link LLVM libraries
+        if(COMMAND llvm_map_components_to_libnames)
+            # Use CMake config approach if available
+            llvm_map_components_to_libnames(llvm_libs 
+                core 
+                support 
+                irreader 
+                codegen 
+                target 
+                mc 
+                mcparser 
+                asmprinter 
+                x86codegen  # Add other targets as needed (aarch64codegen, etc.)
+            )
+            set(FINAL_LLVM_LIBS ${llvm_libs})
+        else()
+            # Use manual approach - libraries from llvm-config
+            set(FINAL_LLVM_LIBS ${LLVM_LIBRARIES})
+            if(LLVM_SYSTEM_LIBS)
+                list(APPEND FINAL_LLVM_LIBS ${LLVM_SYSTEM_LIBS})
+            endif()
+            
+            # Add library search path
+            if(LLVM_LIBRARY_DIRS)
+                link_directories(${LLVM_LIBRARY_DIRS})
+            endif()
+        endif()
         
         if(TARGET loom_compiler_lib)
-            target_link_libraries(loom_compiler_lib PUBLIC ${llvm_libs})
+            target_link_libraries(loom_compiler_lib PUBLIC ${FINAL_LLVM_LIBS})
         elseif(TARGET loom)
-            target_link_libraries(loom PRIVATE ${llvm_libs})
+            target_link_libraries(loom PRIVATE ${FINAL_LLVM_LIBS})
         endif()
         
         message(STATUS "LLVM integration enabled")
     else()
         message(STATUS "LLVM not found - building without LLVM support")
         message(STATUS "To use LLVM, install it and set LLVM_DIR to the LLVM CMake directory")
+        message(STATUS "Or ensure llvm-config is in your PATH")
     endif()
 endif()
 

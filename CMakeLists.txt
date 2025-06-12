@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 
+# Set vcpkg toolchain file if not already set
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "C:/Users/chris/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "Vcpkg toolchain file")
+endif()
+
 # Force Clang compiler (must be set before project())
 if(WIN32)
     # On Windows, prefer Clang over MSVC
@@ -75,7 +81,7 @@ option(LOOM_BUILD_TESTING "Build and run tests" ON)
 option(LOOM_BUILD_EXAMPLES "Build examples" ON)
 option(LOOM_USE_SANITIZERS "Enable sanitizers in debug builds (Linux/macOS only)" ON)
 option(LOOM_FORCE_DISABLE_SANITIZERS "Force disable sanitizers on all platforms" OFF)
-option(LOOM_USE_LLVM "Enable LLVM support" OFF)
+option(LOOM_USE_LLVM "Enable LLVM support" ON)
 option(LOOM_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
 
 # Dependencies
