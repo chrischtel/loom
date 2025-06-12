@@ -14,6 +14,8 @@ enum class TokenType {
   TOKEN_COMMA,
   TOKEN_EQUAL,
   TOKEN_EQUAL_EQUAL,
+  TOKEN_LESS,
+  TOKEN_GREATER,
   TOKEN_SLASH,
   TOKEN_PLUS,
   TOKEN_MINUS,
@@ -39,6 +41,8 @@ enum class TokenType {
   TOKEN_KEYWORD_ELSE,    // else statement
   TOKEN_KEYWORD_TRUE,
   TOKEN_KEYWORD_FALSE,
+  TOKEN_KEYWORD_WHILE,
+
   // Specials
   TOKEN_ERROR
 };

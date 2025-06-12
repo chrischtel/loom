@@ -10,6 +10,7 @@ static const std::unordered_map<std::string_view, TokenType> keywords = {
     {"else", TokenType::TOKEN_KEYWORD_ELSE},
     {"true", TokenType::TOKEN_KEYWORD_TRUE},
     {"false", TokenType::TOKEN_KEYWORD_FALSE},
+    {"while", TokenType::TOKEN_KEYWORD_WHILE},
 };
 
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
@@ -181,6 +182,10 @@ LoomToken Scanner::scanNextToken() {
     case '=':
       return (makeToken(match('=') ? TokenType::TOKEN_EQUAL_EQUAL
                                    : TokenType::TOKEN_EQUAL));
+    case '<':
+      return makeToken(TokenType::TOKEN_LESS);
+    case '>':
+      return makeToken(TokenType::TOKEN_GREATER);
     case ';':
       return makeToken(TokenType::TOKEN_SEMICOLON);
     case ':':
@@ -251,6 +256,8 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_TRUE";
     case TokenType::TOKEN_KEYWORD_FALSE:
       return "TOKEN_KEYWORD_FALSE";
+    case TokenType::TOKEN_KEYWORD_WHILE:
+      return "TOKEN_KEYWORD_WHILE";
     case TokenType::TOKEN_SEMICOLON:
       return "TOKEN_SEMICOLON";
     case TokenType::TOKEN_COLON:
@@ -261,6 +268,10 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_EQUAL";
     case TokenType::TOKEN_EQUAL_EQUAL:
       return "TOKEN_EQUAL_EQUAL";
+    case TokenType::TOKEN_LESS:
+      return "TOKEN_LESS";
+    case TokenType::TOKEN_GREATER:
+      return "TOKEN_GREATER";
     case TokenType::TOKEN_SLASH:
       return "TOKEN_SLASH";
     case TokenType::TOKEN_PLUS:

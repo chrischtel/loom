@@ -30,10 +30,12 @@ class Parser {
   std::unique_ptr<StmtNode> parseDeclaration();
   std::unique_ptr<StmtNode> parseVarDeclaration(VarDeclKind kind);
   std::unique_ptr<StmtNode> parseIfStatement();
+  std::unique_ptr<StmtNode> parseWhileStatement();
   std::unique_ptr<StmtNode> parseExpressionStatement();
   std::unique_ptr<ExprNode> parseExpression();
   std::unique_ptr<ExprNode> parseAssignment();
   std::unique_ptr<ExprNode> parseEquality();
+  std::unique_ptr<ExprNode> parseComparison();
   std::unique_ptr<ExprNode> parseTerm();
   std::unique_ptr<ExprNode> parseFactor();
   std::unique_ptr<ExprNode> parseUnary();

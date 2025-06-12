@@ -20,6 +20,7 @@ class UnaryExpr;
 class VarDeclNode;
 class ExprStmtNode;
 class IfStmtNode;
+class WhileStmtNode;
 class FunctionCallExpr;
 class TypeNode;
 class IntegerTypeNode;
@@ -43,6 +44,7 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(VarDeclNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(ExprStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IfStmtNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(WhileStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FunctionCallExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(TypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IntegerTypeNode& node) = 0;
@@ -467,6 +469,32 @@ class IfStmtNode : public StmtNode {
     result += "], else: [";
     for (const auto& stmt : else_body) {
       result += stmt->toString() + ", ";
+    }
+    result += "])";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+class WhileStmtNode : public StmtNode {
+ public:
+  std::unique_ptr<ExprNode> condition;
+  std::vector<std::unique_ptr<StmtNode>> body;
+
+  WhileStmtNode(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> cond,
+                std::vector<std::unique_ptr<StmtNode>> stmts)
+      : StmtNode(loc), condition(std::move(cond)), body(std::move(stmts)) {}
+
+  std::string toString() const override {
+    std::string result = "WhileStmt(cond: ";
+    result += condition ? condition->toString() : "null";
+    result += ", body: [";
+    for (size_t i = 0; i < body.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += body[i] ? body[i]->toString() : "null";
     }
     result += "])";
     return result;

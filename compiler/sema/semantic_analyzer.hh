@@ -25,6 +25,7 @@ class SemanticAnalyzer : public ASTVisitor {
   std::unique_ptr<TypeNode> visit(VarDeclNode& node) override;
   std::unique_ptr<TypeNode> visit(ExprStmtNode& node) override;
   std::unique_ptr<TypeNode> visit(IfStmtNode& node) override;
+  std::unique_ptr<TypeNode> visit(WhileStmtNode& node) override;
   std::unique_ptr<TypeNode> visit(FunctionCallExpr& node) override;
   std::unique_ptr<TypeNode> visit(TypeNode& node) override;
   std::unique_ptr<TypeNode> visit(IntegerTypeNode& node) override;

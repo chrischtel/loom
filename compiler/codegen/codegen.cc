@@ -210,8 +210,16 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
     std::cout << "[CodeGen] Processing IfStmtNode" << std::endl;
     return codegen(*n);
   }
+  if (auto* n = dynamic_cast<WhileStmtNode*>(&node)) {
+    std::cout << "[CodeGen] Processing WhileStmtNode" << std::endl;
+    return codegen(*n);
+  }
   if (auto* n = dynamic_cast<ExprStmtNode*>(&node)) {
     std::cout << "[CodeGen] Processing ExprStmtNode" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<AssignmentExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing AssignmentExpr" << std::endl;
     return codegen(*n);
   }
   if (auto* n = dynamic_cast<FunctionCallExpr*>(&node)) {
@@ -394,6 +402,10 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
         return builder->CreateFDiv(L, R, "fdiv.tmp");
       case TokenType::TOKEN_EQUAL_EQUAL:
         return builder->CreateFCmpOEQ(L, R, "fcmp.tmp");
+      case TokenType::TOKEN_LESS:
+        return builder->CreateFCmpOLT(L, R, "fcmp.tmp");
+      case TokenType::TOKEN_GREATER:
+        return builder->CreateFCmpOGT(L, R, "fcmp.tmp");
       default:
         throw std::runtime_error("CodeGen: Unknown binary operator for float.");
     }
@@ -410,6 +422,10 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
                                    "div.tmp");  // SDiv für Signed Integers
       case TokenType::TOKEN_EQUAL_EQUAL:
         return builder->CreateICmpEQ(L, R, "icmp.tmp");
+      case TokenType::TOKEN_LESS:
+        return builder->CreateICmpSLT(L, R, "icmp.tmp");
+      case TokenType::TOKEN_GREATER:
+        return builder->CreateICmpSGT(L, R, "icmp.tmp");
       default:
         throw std::runtime_error(
             "CodeGen: Unknown binary operator for integer.");
@@ -470,14 +486,89 @@ llvm::Value* CodeGen::codegen(IfStmtNode& node) {
   return nullptr;  // If statements don't return values
 }
 
+llvm::Value* CodeGen::codegen(WhileStmtNode& node) {
+  std::cout << "[CodeGen] Generating WhileStmtNode" << std::endl;
+
+  // Get current function
+  llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+
+  // Create basic blocks
+  llvm::BasicBlock* header_block =
+      llvm::BasicBlock::Create(*context, "loop.header", current_function);
+
+  // Body block (ohne function parameter, wird später eingefügt):
+  llvm::BasicBlock* body_block =
+      llvm::BasicBlock::Create(*context, "loop.body");
+
+  // Exit block (ohne function parameter, wird später eingefügt):
+  llvm::BasicBlock* exit_block =
+      llvm::BasicBlock::Create(*context, "loop.exit");
+
+  // 1. Springe vom aktuellen Block zum Header
+  builder->CreateBr(header_block);
+
+  // 2. Header - Bedingung evaluieren
+  builder->SetInsertPoint(header_block);
+  llvm::Value* condition_val = codegen(*node.condition);
+  if (!condition_val) return nullptr;
+
+  // Conditional Branch: wenn true → body, wenn false → exit
+  builder->CreateCondBr(condition_val, body_block, exit_block);
+
+  // 3. Body - Statements ausführen und zurück zum Header
+  body_block->insertInto(current_function);
+  builder->SetInsertPoint(body_block);
+
+  // Führe alle Statements im Body aus
+  for (const auto& stmt : node.body) {
+    codegen(*stmt);
+  }
+
+  // Springe zurück zum Header (das ist der Schlüssel!)
+  if (!builder->GetInsertBlock()->getTerminator()) {
+    builder->CreateBr(header_block);  // ← Zurück zum Header!
+  }
+
+  // 4. Exit - Nach der Schleife weitermachen
+  exit_block->insertInto(current_function);
+  builder->SetInsertPoint(exit_block);
+
+  return nullptr;  // While statements don't return values
+}
+
 llvm::Value* CodeGen::codegen(ExprStmtNode& node) {
   std::cout << "[CodeGen] Generating ExprStmtNode" << std::endl;
 
   // For expression statements, we just evaluate the expression
   // The result value is not used, but the expression may have side effects
   llvm::Value* result = codegen(*node.expression);
-
   return result;  // Return the value in case it's needed
+}
+
+llvm::Value* CodeGen::codegen(AssignmentExpr& node) {
+  std::cout << "[CodeGen] Generating AssignmentExpr: " << node.name
+            << std::endl;
+
+  // Generate the value to assign
+  llvm::Value* value = codegen(*node.value);
+  if (!value) return nullptr;
+
+  // Find the variable in the symbol table
+  auto it = named_values.find(node.name);
+  if (it == named_values.end()) {
+    std::cout << "[CodeGen] ERROR: Undefined variable: " << node.name
+              << std::endl;
+    throw std::runtime_error("Undefined variable: " + node.name);
+  }
+
+  llvm::Value* variable_ptr = it->second;
+
+  // Store the new value
+  builder->CreateStore(value, variable_ptr);
+
+  std::cout << "[CodeGen] Assignment completed for variable: " << node.name
+            << std::endl;
+  return value;  // Return the assigned value
 }
 
 llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {

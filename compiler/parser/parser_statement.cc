@@ -13,7 +13,6 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
     if (isAtEnd() || check(TokenType::TOKEN_RIGHT_BRACE)) {
       return nullptr;
     }
-
     if (match(TokenType::TOKEN_KEYWORD_LET))
       return parseVarDeclaration(VarDeclKind::LET);
     if (match(TokenType::TOKEN_KEYWORD_MUT))
@@ -21,6 +20,7 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
     if (match(TokenType::TOKEN_KEYWORD_DEFINE))
       return parseVarDeclaration(VarDeclKind::DEFINE);
     if (match(TokenType::TOKEN_KEYWORD_IF)) return parseIfStatement();
+    if (match(TokenType::TOKEN_KEYWORD_WHILE)) return parseWhileStatement();
 
     return parseExpressionStatement();
   } catch (const ParseError&) {
@@ -91,4 +91,26 @@ std::unique_ptr<StmtNode> Parser::parseIfStatement() {
 
   return std::make_unique<IfStmtNode>(
       if_loc, std::move(condition), std::move(then_body), std::move(else_body));
+}
+
+std::unique_ptr<StmtNode> Parser::parseWhileStatement() {
+  auto while_loc = previous().location;  // location of the 'while' token
+
+  consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'while'.");
+  std::unique_ptr<ExprNode> condition = parseExpression();
+  consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after while condition.");
+
+  consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before while body.");
+  std::vector<std::unique_ptr<StmtNode>> body;
+
+  while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+    if (auto stmt = parseDeclaration()) {
+      body.push_back(std::move(stmt));
+    }
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after while body.");
+
+  return std::make_unique<WhileStmtNode>(while_loc, std::move(condition),
+                                         std::move(body));
 }

@@ -373,6 +373,23 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(IfStmtNode& node) {
   return nullptr;  // If statements don't return a value
 }
 
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(WhileStmtNode& node) {
+  if (node.condition) {
+    std::unique_ptr<TypeNode> condition_type = node.condition->accept(*this);
+    if (condition_type &&
+        !dynamic_cast<BooleanTypeNode*>(condition_type.get())) {
+      error(node.location, "While condition must be boolean type.");
+    }
+  }
+
+  for (const auto& stmt : node.body) {
+    if (stmt) {
+      stmt->accept(*this);
+    }
+  }
+  return nullptr;
+}
+
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionCallExpr& node) {
   // For now, we only support the built-in "print" function
   if (node.function_name == "print") {
