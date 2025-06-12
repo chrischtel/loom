@@ -19,8 +19,6 @@ void ASTPrinter::print(const std::vector<std::unique_ptr<StmtNode>>& ast) {
   indentation_level--;
 }
 
-// --- KORRIGIERTE CONTAINER-METHODEN ---
-
 void ASTPrinter::visit(VarDeclNode& node) {
   indent();
   std::string kind_str;
@@ -41,10 +39,8 @@ void ASTPrinter::visit(VarDeclNode& node) {
   if (node.initializer) {
     indentation_level++;
     indent();
-    // Drucke das Label und einen Zeilenumbruch.
     std::cout << "- Initializer:" << std::endl;
-    // Jetzt kann der Besucher des Kindes die nächste Zeile komplett für sich
-    // beanspruchen.
+
     node.initializer->accept(*this);
     indentation_level--;
   }
