@@ -9,6 +9,7 @@
 #include "parser/ast_printer.hh"
 #include "parser/parser_internal.hh"
 #include "scanner/scanner_internal.hh"
+#include "sema/semantic_analyze.hh"
 
 std::string readFile(const std::string& filename) {
   std::ifstream file(filename);
@@ -69,14 +70,23 @@ int main(int argc, char* argv[]) {
 
   std::vector<std::unique_ptr<StmtNode>> ast = parser.parse();
   if (!parser.hasError()) {
-    std::cout << "Parse successful!" << std::endl;
-    std::cout << "--- Abstract Syntax Tree ---" << std::endl;
-    ASTPrinter printer;
-    printer.print(ast);  // Rufe die neue Print-Funktion auf
+    std::cout << std::endl << "--- Running Semantic Analyzer ---" << std::endl;
+    SemanticAnalyzer sema;
+    sema.analyze(ast);  // Rufe die Analyse auf dem AST auf
+
+    if (!sema.hasError()) {
+      std::cout << "Semantic analysis successful!" << std::endl;
+      // Gib den AST aus, um zu sehen, dass alles noch da ist
+      std::cout << "--- Abstract Syntax Tree ---" << std::endl;
+      ASTPrinter printer;
+      printer.print(ast);
+    } else {
+      std::cout << "Semantic analysis failed!" << std::endl;
+    }
+    std::cout << "--- Semantic Analyzer Finished ---" << std::endl;
   } else {
-    std::cout << "Parse failed!" << std::endl;
+    std::cout << "Parse failed! Skipping subsequent stages." << std::endl;
   }
-  std::cout << "--- Parser Finished ---" << std::endl;
 
   return 0;
 }

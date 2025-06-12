@@ -16,6 +16,13 @@ class SemanticAnalyzer : public ASTVisitor {
   void analyze(const std::vector<std::unique_ptr<StmtNode>>& ast);
   bool hasError() const { return had_error; }
 
-  void visit(VarDeclNode& node) override;
+  void visit(NumberLiteral& node) override;
   void visit(Identifier& node) override;
+  void visit(StringLiteral& node) override;
+  void visit(AssignmentExpr& node) override;
+  void visit(BinaryExpr& node) override;
+  void visit(UnaryExpr& node) override;
+  void visit(VarDeclNode& node) override;
+  void visit(ExprStmtNode& node) override;
+  void visit(TypeNode& node) override;
 };
