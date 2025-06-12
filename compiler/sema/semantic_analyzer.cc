@@ -27,10 +27,9 @@ void SemanticAnalyzer::error(const LoomSourceLocation& loc,
 
 // --- DIE ERSTE WICHTIGE VISIT-METHODE ---
 void SemanticAnalyzer::visit(VarDeclNode& node) {
-  // TODO: Analysiere den Initializer zuerst (wichtig für Typ-Inferenz später)
-  // if (node.initializer) {
-  //     node.initializer->accept(*this);
-  // }
+  if (node.initializer) {
+    node.initializer->accept(*this);
+  }
 
   // Erstelle die Informationen für das neue Symbol.
   SymbolInfo info;
