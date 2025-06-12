@@ -24,6 +24,8 @@ class IntegerTypeNode;
 class FloatTypeNode;
 class BooleanTypeNode;
 class StringTypeNode;
+class IntegerLiteralTypeNode;
+class FloatLiteralTypeNode;
 
 // KORREKTUR 2: Nur noch EIN Visitor-Interface
 class ASTVisitor {
@@ -43,6 +45,8 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(FloatTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(BooleanTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(StringTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(IntegerLiteralTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(FloatLiteralTypeNode& node) = 0;
 };
 
 // Basisklasse
@@ -74,6 +78,8 @@ class TypeNode : public ASTNode {
  public:
   virtual bool isEqualTo(const TypeNode* other) const = 0;
   virtual std::string getTypeName() const = 0;
+  // New method to check if this type can accept a value from another type
+  virtual bool canAcceptFrom(const TypeNode* other) const = 0;
 
  protected:
   using ASTNode::ASTNode;
@@ -96,12 +102,21 @@ class IntegerTypeNode : public TypeNode {
   std::string getTypeName() const override {
     return (is_signed ? "i" : "u") + std::to_string(bit_width);
   }
-
   bool isEqualTo(const TypeNode* other) const override {
     if (auto other_int = dynamic_cast<const IntegerTypeNode*>(other)) {
       return this->bit_width == other_int->bit_width &&
              this->is_signed == other_int->is_signed;
     }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    // Can always accept from exactly the same type
+    if (isEqualTo(other)) {
+      return true;
+    }
+    // For now, we'll handle literal compatibility in the semantic analyzer
+    // This method can be extended for more complex type conversions
     return false;
   }
 
@@ -125,11 +140,19 @@ class FloatTypeNode : public TypeNode {
   std::string getTypeName() const override {
     return "f" + std::to_string(bit_width);
   }
-
   bool isEqualTo(const TypeNode* other) const override {
     if (auto other_float = dynamic_cast<const FloatTypeNode*>(other)) {
       return this->bit_width == other_float->bit_width;
     }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    // Can always accept from exactly the same type
+    if (isEqualTo(other)) {
+      return true;
+    }
+    // For now, we'll handle literal compatibility in the semantic analyzer
     return false;
   }
 
@@ -146,9 +169,12 @@ class BooleanTypeNode : public TypeNode {
   std::string toString() const override { return "bool"; }
 
   std::string getTypeName() const override { return "bool"; }
-
   bool isEqualTo(const TypeNode* other) const override {
     return dynamic_cast<const BooleanTypeNode*>(other) != nullptr;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
   }
 
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
@@ -164,9 +190,112 @@ class StringTypeNode : public TypeNode {
   std::string toString() const override { return "string"; }
 
   std::string getTypeName() const override { return "string"; }
-
   bool isEqualTo(const TypeNode* other) const override {
     return dynamic_cast<const StringTypeNode*>(other) != nullptr;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Special type for integer literals that can be converted to appropriate types
+class IntegerLiteralTypeNode : public TypeNode {
+ public:
+  long long value;  // Store the actual literal value
+
+  IntegerLiteralTypeNode(const LoomSourceLocation& loc, long long val)
+      : TypeNode(loc), value(val) {}
+
+  std::string toString() const override {
+    return "IntegerLiteral(" + std::to_string(value) + ")";
+  }
+
+  std::string getTypeName() const override { return "literal_int"; }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_lit = dynamic_cast<const IntegerLiteralTypeNode*>(other)) {
+      return this->value == other_lit->value;
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+
+  // Check if this literal can fit into a specific integer type
+  bool canFitInto(const IntegerTypeNode* target) const {
+    if (target->is_signed) {
+      switch (target->bit_width) {
+        case 8:
+          return value >= -128 && value <= 127;
+        case 16:
+          return value >= -32768 && value <= 32767;
+        case 32:
+          return value >= -2147483648LL && value <= 2147483647LL;
+        case 64:
+          return true;  // long long can always fit in i64
+        default:
+          return false;
+      }
+    } else {
+      // Unsigned integers
+      if (value < 0) return false;  // Can't fit negative values in unsigned
+      switch (target->bit_width) {
+        case 8:
+          return value <= 255;
+        case 16:
+          return value <= 65535;
+        case 32:
+          return static_cast<unsigned long long>(value) <= 4294967295ULL;
+        case 64:
+          return value >= 0;  // Any non-negative long long fits in u64
+        default:
+          return false;
+      }
+    }
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Special type for float literals that can be converted to appropriate types
+class FloatLiteralTypeNode : public TypeNode {
+ public:
+  double value;  // Store the actual literal value
+
+  FloatLiteralTypeNode(const LoomSourceLocation& loc, double val)
+      : TypeNode(loc), value(val) {}
+
+  std::string toString() const override {
+    return "FloatLiteral(" + std::to_string(value) + ")";
+  }
+
+  std::string getTypeName() const override { return "literal_float"; }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_lit = dynamic_cast<const FloatLiteralTypeNode*>(other)) {
+      return this->value == other_lit->value;
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+
+  // Check if this literal can fit into a specific float type
+  bool canFitInto(const FloatTypeNode* target) const {
+    // For simplicity, assume all float literals can fit into f32 and f64
+    // f16 might have range issues, but we'll be permissive for now
+    return target->bit_width >= 16;
   }
 
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {

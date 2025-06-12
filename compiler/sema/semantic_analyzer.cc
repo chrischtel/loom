@@ -2,6 +2,7 @@
 #include "semantic_analyzer.hh"
 
 #include <iostream>
+#include <string>
 
 // --- Konstruktor und Hauptfunktionen ---
 
@@ -44,16 +45,52 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
     // prüfen, ob der Typ "i32" überhaupt ein bekannter Typ ist.
     node.type->accept(*this);
   }
-
   // Schritt 3: Führe die Typ-Prüfung durch.
-  if (node.type && initializer_type) {  // Fall A: Typ ist deklariert UND es
-                                        // gibt einen Initializer.
-    // Wir müssen prüfen, ob die Typen übereinstimmen.
-    if (!node.type->isEqualTo(initializer_type.get())) {
-      error(node.location,
-            "Type mismatch: Cannot initialize variable of type '" +
-                node.type->getTypeName() + "' with value of type '" +
-                initializer_type->getTypeName() + "'.");
+  if (node.type && initializer_type) {
+    // Fall A: Typ ist deklariert UND es gibt einen Initializer.
+    // Check for intelligent literal conversion
+    bool types_compatible = false;
+
+    if (node.type->isEqualTo(initializer_type.get())) {
+      // Types are exactly equal
+      types_compatible = true;
+    } else {
+      // Check for literal conversion
+      if (auto int_literal = dynamic_cast<const IntegerLiteralTypeNode*>(
+              initializer_type.get())) {
+        if (auto target_int =
+                dynamic_cast<const IntegerTypeNode*>(node.type.get())) {
+          // Check if integer literal can fit into target integer type
+          types_compatible = int_literal->canFitInto(target_int);
+        }
+      } else if (auto float_literal = dynamic_cast<const FloatLiteralTypeNode*>(
+                     initializer_type.get())) {
+        if (auto target_float =
+                dynamic_cast<const FloatTypeNode*>(node.type.get())) {
+          // Check if float literal can fit into target float type
+          types_compatible = float_literal->canFitInto(target_float);
+        }
+      }
+    }
+
+    if (!types_compatible) {
+      std::string error_msg =
+          "Type mismatch: Cannot initialize variable of type '" +
+          node.type->getTypeName() + "' with value of type '" +
+          initializer_type->getTypeName() + "'";
+
+      // Add helpful info for literal conversions
+      if (auto int_literal = dynamic_cast<const IntegerLiteralTypeNode*>(
+              initializer_type.get())) {
+        error_msg +=
+            " (value " + std::to_string(int_literal->value) + " doesn't fit)";
+      } else if (auto float_literal = dynamic_cast<const FloatLiteralTypeNode*>(
+                     initializer_type.get())) {
+        error_msg +=
+            " (value " + std::to_string(float_literal->value) + " doesn't fit)";
+      }
+
+      error(node.location, error_msg + ".");
     }
   }
 
@@ -104,11 +141,13 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(TypeNode& /* node */) {
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(NumberLiteral& node) {
   if (node.is_float) {
-    return std::make_unique<FloatTypeNode>(node.location,
-                                           64);  // Default to f64
+    // Parse the float value and create a FloatLiteralTypeNode
+    double value = std::stod(node.value);
+    return std::make_unique<FloatLiteralTypeNode>(node.location, value);
   } else {
-    return std::make_unique<IntegerTypeNode>(node.location,
-                                             32);  // Default to i32
+    // Parse the integer value and create an IntegerLiteralTypeNode
+    long long value = std::stoll(node.value);
+    return std::make_unique<IntegerLiteralTypeNode>(node.location, value);
   }
 }
 
@@ -218,4 +257,15 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BooleanTypeNode& node) {
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StringTypeNode& node) {
   // Create a copy of the string type
   return std::make_unique<StringTypeNode>(node.location);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(
+    IntegerLiteralTypeNode& node) {
+  // Create a copy of the integer literal type
+  return std::make_unique<IntegerLiteralTypeNode>(node.location, node.value);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FloatLiteralTypeNode& node) {
+  // Create a copy of the float literal type
+  return std::make_unique<FloatLiteralTypeNode>(node.location, node.value);
 }
