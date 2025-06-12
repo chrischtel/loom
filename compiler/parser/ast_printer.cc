@@ -27,17 +27,14 @@ void ASTPrinter::visit(VarDeclNode& node) {
   if (node.initializer) {
     indentation_level++;
     indent();
-    std::cout << "- Initializer: ";
-    // Wir müssen hier einen Zeilenumbruch unterdrücken, damit es schön aussieht
-    // Das ist ein bisschen ein Hack, aber für einen einfachen Printer okay.
-    std::cout << node.initializer->toString() << std::endl;
+    std::cout << "- Initializer: ";   // Kein Zeilenumbruch hier!
+    node.initializer->accept(*this);  // Lass das Kind sich selbst drucken
     indentation_level--;
   }
 }
-
 void ASTPrinter::visit(ExprStmtNode& node) {
   indent();
-  std::cout << "- ExprStmt" << std::endl;
+  std::cout << "- ExprStmt:" << std::endl;
   indentation_level++;
   if (node.expression) {
     node.expression->accept(*this);
@@ -47,33 +44,31 @@ void ASTPrinter::visit(ExprStmtNode& node) {
 
 void ASTPrinter::visit(AssignmentExpr& node) {
   indent();
-  std::cout << "- Assignment(" << node.name << ")" << std::endl;
+  std::cout << "- Assignment(" << node.name << "):" << std::endl;
   if (node.value) {
     indentation_level++;
     indent();
-    std::cout << "- Value:" << std::endl;
-    node.value->accept(*this);  // Delegiere an den Besucher des Kindes
+    std::cout << "- Value: ";  // Kein Zeilenumbruch hier!
+    node.value->accept(*this);
     indentation_level--;
   }
 }
 
 void ASTPrinter::visit(BinaryExpr& node) {
   indent();
-  std::cout << "- Binary(" << node.op.value << ")" << std::endl;
+  std::cout << "Binary(" << node.op.value << ")" << std::endl;
+  indentation_level++;
   if (node.left) {
-    indentation_level++;
     indent();
-    std::cout << "- Left:" << std::endl;
+    std::cout << "- Left: ";
     node.left->accept(*this);
-    indentation_level--;
   }
   if (node.right) {
-    indentation_level++;
     indent();
-    std::cout << "- Right:" << std::endl;
+    std::cout << "- Right: ";
     node.right->accept(*this);
-    indentation_level--;
   }
+  indentation_level--;
 }
 
 // Die "Blätter" des Baumes
