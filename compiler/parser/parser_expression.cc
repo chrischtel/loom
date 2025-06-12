@@ -77,6 +77,14 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
     return std::make_unique<StringLiteral>(token.location, token.value);
   }
 
+  if (match(TokenType::TOKEN_LEFT_PAREN)) {
+    std::unique_ptr<ExprNode> expr = parseExpression();
+    consume(TokenType::TOKEN_RIGHT_PAREN, "Exprected ')' after expression.");
+
+    // TODO: GroupingExpr-Node ?
+    return expr;
+  }
+
   error(peek(), "Expected expression");
   return nullptr;
 }
