@@ -101,8 +101,24 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
     // Wir müssen eine Kopie erstellen, da der `node.type` unique ist.
     final_type = node.type->accept(*this);
   } else if (initializer_type) {
-    // Ansonsten inferieren (schlussfolgern) wir den Typ vom Initializer.
-    final_type = std::move(initializer_type);
+    // *** HIER KOMMT DIE KORREKTUR ***
+    // Ansonsten inferieren (schlussfolgern) wir den Typ vom Initializer
+    // UND LÖSEN IHN SOFORT IN EINEN KONKRETEN TYP AUF.
+
+    if (auto* lit =
+            dynamic_cast<IntegerLiteralTypeNode*>(initializer_type.get())) {
+      // Standard-Inferenz: Ein Integer-Literal ohne Kontext wird zu i32.
+      final_type = std::make_unique<IntegerTypeNode>(lit->location, 32, true);
+    } else if (auto* lit = dynamic_cast<FloatLiteralTypeNode*>(
+                   initializer_type.get())) {
+      // Standard-Inferenz: Ein Float-Literal ohne Kontext wird zu f64.
+      final_type = std::make_unique<FloatTypeNode>(lit->location, 64);
+    } else {
+      // Andere Typen (wie string) sind bereits konkret und können übernommen
+      // werden.
+      final_type = std::move(initializer_type);
+    }
+
   } else {
     // Fall C: Kein Typ und kein Initializer. Das ist ein Fehler in unserer
     // Sprache.
@@ -130,6 +146,9 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
                    dynamic_cast<FloatTypeNode*>(final_type.get())) {
       node.type = std::make_unique<FloatTypeNode>(float_type->location,
                                                   float_type->bit_width);
+    } else if (auto string_type =
+                   dynamic_cast<StringTypeNode*>(final_type.get())) {
+      node.type = std::make_unique<StringTypeNode>(string_type->location);
     }
     // Add other type cases as needed
   }

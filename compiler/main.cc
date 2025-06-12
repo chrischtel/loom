@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
     // No file provided, use default test code
     std::cout << "No file provided, using default test code." << std::endl;
     filename = "inline_test.loom";
-    source_code = "let answer = 42;";
+    source_code = "let x = 10; let y = 32; let z = x + y;";
   } else {
     // Read from provided file
     filename = argv[1];

@@ -24,10 +24,13 @@
 class StmtNode;  // Wir arbeiten mit der Basisklasse für Statements
 class ASTNode;
 class NumberLiteral;
+class StringLiteral;
 class VarDeclNode;
 class TypeNode;
 class IntegerLiteralTypeNode;
 class FloatLiteralTypeNode;
+class BinaryExpr;
+class Identifier;
 
 class CodeGen {
  public:
@@ -55,11 +58,15 @@ class CodeGen {
   std::unique_ptr<llvm::IRBuilder<>> builder;
 
   std::map<std::string, llvm::Value*> named_values;
-
+  std::map<std::string, llvm::Type*>
+      variable_types;  // Track types for opaque pointers
   // Dispatch-Methoden (unverändert)
   llvm::Value* codegen(ASTNode& node);
   llvm::Value* codegen(NumberLiteral& node);
+  llvm::Value* codegen(StringLiteral& node);
   llvm::Value* codegen(VarDeclNode& node);
+  llvm::Value* codegen(BinaryExpr& node);
+  llvm::Value* codegen(Identifier& node);
 
   llvm::Type* typeToLLVMType(TypeNode& type);
 

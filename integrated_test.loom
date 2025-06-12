@@ -1,1 +1,1 @@
-let answer = 42;
+let answer = "Hello from String";

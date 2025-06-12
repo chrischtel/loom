@@ -207,8 +207,20 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
     std::cout << "[CodeGen] Processing VarDeclNode" << std::endl;
     return codegen(*n);
   }
+  if (auto* n = dynamic_cast<BinaryExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing BinaryExpr" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<Identifier*>(&node)) {
+    std::cout << "[CodeGen] Processing Identifier" << std::endl;
+    return codegen(*n);
+  }
   if (auto* n = dynamic_cast<NumberLiteral*>(&node)) {
     std::cout << "[CodeGen] Processing NumberLiteral" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<StringLiteral*>(&node)) {
+    std::cout << "[CodeGen] Processing StringLiteral" << std::endl;
     return codegen(*n);
   }
   // ... weitere Knotentypen hier einfügen
@@ -232,12 +244,39 @@ llvm::Value* CodeGen::codegen(NumberLiteral& node) {
     return llvm::ConstantFP::get(*context, llvm::APFloat(val));
   } else {
     long long val = std::stoll(node.value);
-    std::cout << "[CodeGen] Creating int constant: " << val << std::endl;
-    // TODO: Hier müsste man den Typ genauer bestimmen (i32, i64 etc.)
+    std::cout << "[CodeGen] Creating int constant: " << val
+              << std::endl;  // TODO: Hier müsste man den Typ genauer bestimmen
+                             // (i32, i64 etc.)
     // Fürs Erste nehmen wir immer i32.
     return llvm::ConstantInt::get(
         *context, llvm::APInt(32, static_cast<uint64_t>(val), true));
   }
+}
+
+llvm::Value* CodeGen::codegen(StringLiteral& node) {
+  std::cout << "[CodeGen] Generating StringLiteral: \"" << node.value << "\""
+            << std::endl;
+
+  // Create a global string constant
+  llvm::Constant* strConstant =
+      llvm::ConstantDataArray::getString(*context, node.value, true);
+
+  // Create a global variable to hold the string
+  llvm::GlobalVariable* globalStr = new llvm::GlobalVariable(
+      *module, strConstant->getType(),
+      true,  // isConstant
+      llvm::GlobalValue::PrivateLinkage, strConstant, ".str");
+
+  // Return a pointer to the string (i8*)
+  std::vector<llvm::Value*> indices = {
+      llvm::ConstantInt::get(*context, llvm::APInt(32, 0, false)),
+      llvm::ConstantInt::get(*context, llvm::APInt(32, 0, false))};
+
+  llvm::Value* strPtr = builder->CreateInBoundsGEP(
+      strConstant->getType(), globalStr, indices, "str.ptr");
+
+  std::cout << "[CodeGen] String constant created successfully" << std::endl;
+  return strPtr;
 }
 
 // --- Codegen für Statements ---
@@ -274,13 +313,89 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
   std::cout << "[CodeGen] Storing initializer value in alloca" << std::endl;
   builder->CreateStore(initializerVal, alloca);
   std::cout << "[CodeGen] Store instruction created successfully" << std::endl;
-
   // 5. Merke dir den Speicherort der Variable in unserer "Symboltabelle".
   named_values[node.name] = alloca;
+  variable_types[node.name] =
+      varType;  // Store the type for opaque pointer support
   std::cout << "[CodeGen] Variable " << node.name << " added to symbol table"
             << std::endl;
 
   return nullptr;
+}
+
+llvm::Value* CodeGen::codegen(Identifier& node) {
+  std::cout << "[CodeGen] Generating Identifier: " << node.name << std::endl;
+  // 1. Suche die Variable in unserer Symboltabelle.
+  auto it = named_values.find(node.name);
+  if (it == named_values.end()) {
+    throw std::runtime_error("CodeGen: Unknown variable name '" + node.name +
+                             "'.");
+  }
+
+  // it->second ist der Zeiger auf den Stack-Speicher (das Ergebnis von alloca).
+  llvm::Value* var_ptr = it->second;  // 2. Erzeuge eine 'load'-Instruktion, um
+                                      // den Wert aus dem Speicher zu lesen.
+  // Look up the variable type from our stored types map
+  auto type_it = variable_types.find(node.name);
+  if (type_it == variable_types.end()) {
+    throw std::runtime_error("CodeGen: Unknown variable type for '" +
+                             node.name + "'.");
+  }
+
+  llvm::Type* var_type = type_it->second;
+  return builder->CreateLoad(var_type, var_ptr, node.name + ".load");
+}
+
+llvm::Value* CodeGen::codegen(BinaryExpr& node) {
+  std::cout << "[CodeGen] Generating BinaryExpr" << std::endl;
+  // 1. Rekursiv den Code für die linke und rechte Seite generieren.
+  llvm::Value* L = codegen(*node.left);
+  llvm::Value* R = codegen(*node.right);
+
+  if (!L || !R) {
+    return nullptr;
+  }
+
+  // 2. Type promotion: if one operand is float, promote both to float
+  if (L->getType()->isFloatingPointTy() || R->getType()->isFloatingPointTy()) {
+    // Promote both to floating point
+    if (L->getType()->isIntegerTy()) {
+      L = builder->CreateSIToFP(L, builder->getDoubleTy(), "int2fp");
+    }
+    if (R->getType()->isIntegerTy()) {
+      R = builder->CreateSIToFP(R, builder->getDoubleTy(), "int2fp");
+    }
+
+    // Generate floating point operations
+    switch (node.op.type) {
+      case TokenType::TOKEN_PLUS:
+        return builder->CreateFAdd(L, R, "fadd.tmp");
+      case TokenType::TOKEN_MINUS:
+        return builder->CreateFSub(L, R, "fsub.tmp");
+      case TokenType::TOKEN_STAR:
+        return builder->CreateFMul(L, R, "fmul.tmp");
+      case TokenType::TOKEN_SLASH:
+        return builder->CreateFDiv(L, R, "fdiv.tmp");
+      default:
+        throw std::runtime_error("CodeGen: Unknown binary operator for float.");
+    }
+  } else {
+    // Both operands are integers - generate integer operations
+    switch (node.op.type) {
+      case TokenType::TOKEN_PLUS:
+        return builder->CreateAdd(L, R, "add.tmp");
+      case TokenType::TOKEN_MINUS:
+        return builder->CreateSub(L, R, "sub.tmp");
+      case TokenType::TOKEN_STAR:
+        return builder->CreateMul(L, R, "mul.tmp");
+      case TokenType::TOKEN_SLASH:
+        return builder->CreateSDiv(L, R,
+                                   "div.tmp");  // SDiv für Signed Integers
+      default:
+        throw std::runtime_error(
+            "CodeGen: Unknown binary operator for integer.");
+    }
+  }
 }
 
 // --- Integrated Compilation Methods (like Kaleidoscope) ---
