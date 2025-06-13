@@ -29,6 +29,12 @@ bazel-bin/
 bazel-testlogs/
 .bazelrc.user
 
+# Loom files (except examples)
+*.loom
+loom-*
+!examples/
+!examples/**/*.loom
+
 # IDE and editor files
 .vscode/
 .idea/
