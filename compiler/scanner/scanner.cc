@@ -137,21 +137,28 @@ LoomToken Scanner::scanIdentifier() {
 }
 
 LoomToken Scanner::scanString() {
-  // Der öffnende " wurde bereits verbraucht
   while (peek() != '"' && !isAtEnd()) {
     if (peek() == '\n') {
       current_line++;
       current_column = 1;
       current_line_offset = current_offset;
+      advance();
+    } else if (peek() == '\\') {
+      // Handle escape sequences: consume backslash and next character
+      advance();  // consume the backslash
+      if (!isAtEnd()) {
+        advance();  // consume the escaped character
+      }
+    } else {
+      advance();  // consume normal character
     }
-    advance();
   }
 
   if (isAtEnd()) {
     return makeErrorToken("Unterminated string", '"');
   }
 
-  // Schließende " verbrauchen
+  // Consume the closing quote
   advance();
 
   return makeToken(TokenType::TOKEN_STRING);
