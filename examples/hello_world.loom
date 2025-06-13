@@ -1,6 +1,0 @@
-// Hello World program in Loom
-// This is a simple example demonstrating basic syntax
-
-fn main() {
-    print("Hello, World!")
-}

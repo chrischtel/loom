@@ -1,6 +1,6 @@
 ## [Unreleased]
 ### Added
-
+- Support for String literals with escape sequences
 
 ### Changed
 
