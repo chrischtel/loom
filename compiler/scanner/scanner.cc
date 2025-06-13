@@ -49,6 +49,12 @@ char Scanner::peek_next() {
   return source_buffer[current_offset + 1];
 }
 
+char Scanner::peek_next_next() {
+  if (current_offset + 2 >= source_buffer.size()) return '\0';
+
+  return source_buffer[current_offset + 2];
+}
+
 void Scanner::skipWhitespace() {
   while (!isAtEnd()) {
     switch (peek()) {
@@ -160,8 +166,38 @@ LoomToken Scanner::scanString() {
 
   // Consume the closing quote
   advance();
-
   return makeToken(TokenType::TOKEN_STRING);
+}
+
+LoomToken Scanner::scanMultiLineComment() {
+  // We already consumed the first ", now consume the second and third "
+  advance();  // Second "
+  advance();  // Third "
+
+  while (!isAtEnd()) {
+    // Check for closing """
+    if (peek() == '"' && peek_next() == '"' && peek_next_next() == '"') {
+      // Consume the closing """
+      advance();  // First "
+      advance();  // Second "
+      advance();  // Third "
+
+      // Skip the comment and get the next token
+      return scanNextToken();
+    }
+
+    // Handle newlines for proper line tracking
+    if (peek() == '\n') {
+      current_line++;
+      current_column = 1;
+      current_line_offset = current_offset;
+    }
+
+    advance();
+  }
+
+  // If we reach here, the comment was not properly closed
+  return makeErrorToken("Unterminated multiline comment", '"');
 }
 
 LoomToken Scanner::scanNextToken() {
@@ -216,7 +252,11 @@ LoomToken Scanner::scanNextToken() {
     case '}':
       return makeToken(TokenType::TOKEN_RIGHT_BRACE);
     case '"':
-      return scanString();
+      if (peek() == '"' && peek_next() == '"') {
+        return scanMultiLineComment();
+      } else {
+        return scanString();
+      }
 
     case '/':
       if (match('/')) {

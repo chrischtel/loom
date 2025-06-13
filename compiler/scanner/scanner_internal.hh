@@ -99,7 +99,9 @@ class Scanner {
   char advance();
   char peek();
   char peek_next();
+  char peek_next_next();
   void skipWhitespace();
+  LoomToken scanMultiLineComment();
   bool match(char expected);
 
   LoomSourceLocation getCurrentLocation();
