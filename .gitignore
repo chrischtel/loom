@@ -19,6 +19,7 @@ dist/
 *.class
 *.jar
 build_release/
+scripts/release.*
 
 # Bazel build artifacts
 bazel-*
