@@ -528,8 +528,17 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BuiltinCallExpr& node) {
       error(node.location, "$$print expects exactly 1 argument, got " +
                                std::to_string(node.arguments.size()));
       return nullptr;
+    }  // Return void for print
+    return std::make_unique<IntegerTypeNode>(node.location, 32,
+                                             true);  // i32 for now
+  } else if (node.builtin_name == "print_addr") {
+    // $$print_addr takes a pointer/address argument
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$print_addr expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
     }
-    // Return void for print
+    // Return void for print_addr
     return std::make_unique<IntegerTypeNode>(node.location, 32,
                                              true);  // i32 for now
   } else if (node.builtin_name == "exit") {

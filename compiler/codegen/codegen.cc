@@ -491,8 +491,121 @@ llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
                          llvm::ConstantPointerNull::get(
                              llvm::PointerType::getUnqual(*context))},
                         "write.newline.result");
-
     return result1;  // Return the result of the main write operation
+  } else if (name == "print_addr" && args.size() >= 1) {
+    // Print the actual pointer address
+    llvm::Function* writeFileAddr = module->getFunction("WriteFile");
+    if (!writeFileAddr) {
+      llvm::FunctionType* writeFileType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // BOOL (treated as i32)
+          {
+              llvm::PointerType::getUnqual(*context),  // HANDLE
+              llvm::PointerType::getUnqual(*context),  // LPCVOID (buffer)
+              builder->getInt32Ty(),                   // DWORD (size)
+              llvm::PointerType::getUnqual(
+                  *context),                          // LPDWORD (bytes written)
+              llvm::PointerType::getUnqual(*context)  // LPOVERLAPPED
+          },
+          false);
+      writeFileAddr =
+          llvm::Function::Create(writeFileType, llvm::Function::ExternalLinkage,
+                                 "WriteFile", module.get());
+    }
+
+    llvm::Function* getStdHandleAddr = module->getFunction("GetStdHandle");
+    if (!getStdHandleAddr) {
+      llvm::FunctionType* getStdHandleType = llvm::FunctionType::get(
+          llvm::PointerType::getUnqual(*context),  // HANDLE
+          {builder->getInt32Ty()},                 // DWORD
+          false);
+      getStdHandleAddr = llvm::Function::Create(getStdHandleType,
+                                                llvm::Function::ExternalLinkage,
+                                                "GetStdHandle", module.get());
+    }
+
+    // Get stdout handle
+    llvm::Value* stdoutHandleAddr = builder->CreateCall(
+        getStdHandleAddr, {builder->getInt32(-11)}, "stdout.handle.addr");
+
+    // Print the label "ADDRESS: 0x"
+    llvm::Constant* addrLabel =
+        builder->CreateGlobalString("ADDRESS: 0x", "addr.label");
+    llvm::Value* labelPtr = builder->CreatePointerCast(
+        addrLabel, llvm::PointerType::getUnqual(*context));
+
+    llvm::Value* bytesWrittenLabel = builder->CreateAlloca(
+        builder->getInt32Ty(), nullptr, "bytes.written.label");
+    llvm::Value* result = builder->CreateCall(
+        writeFileAddr,
+        {stdoutHandleAddr, labelPtr, builder->getInt32(12), bytesWrittenLabel,
+         llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(
+             *context))});  // Get the actual pointer address and format it as
+                            // hex manually
+    llvm::Value* argValue = args[0];
+
+    // Convert pointer to integer
+    llvm::Value* ptrAsInt =
+        builder->CreatePtrToInt(argValue, builder->getInt64Ty());
+
+    // Allocate buffer for hex string (16 chars for 64-bit address + null
+    // terminator)
+    llvm::Value* hexBuffer = builder->CreateAlloca(
+        llvm::ArrayType::get(builder->getInt8Ty(), 17), nullptr, "hex.buffer");
+
+    // Create hex digits lookup table
+    llvm::Constant* hexDigits =
+        builder->CreateGlobalString("0123456789ABCDEF", "hex.digits");
+    llvm::Value* hexDigitsPtr = builder->CreatePointerCast(
+        hexDigits, llvm::PointerType::getUnqual(*context));
+
+    // Convert address to hex string manually (16 hex digits)
+    for (int i = 15; i >= 0; i--) {
+      // Extract 4 bits at position i*4
+      llvm::Value* shift = builder->getInt64(i * 4);
+      llvm::Value* shifted = builder->CreateLShr(ptrAsInt, shift);
+      llvm::Value* nibble = builder->CreateAnd(shifted, builder->getInt64(0xF));
+
+      // Get hex character from lookup table
+      llvm::Value* hexCharPtr =
+          builder->CreateGEP(builder->getInt8Ty(), hexDigitsPtr, nibble);
+      llvm::Value* hexChar =
+          builder->CreateLoad(builder->getInt8Ty(), hexCharPtr);
+
+      // Store in buffer at position (15-i)
+      llvm::Value* bufferPos = builder->CreateGEP(
+          builder->getInt8Ty(), hexBuffer, builder->getInt64(15 - i));
+      builder->CreateStore(hexChar, bufferPos);
+    }
+
+    // Add null terminator
+    llvm::Value* nullPos = builder->CreateGEP(builder->getInt8Ty(), hexBuffer,
+                                              builder->getInt64(16));
+    builder->CreateStore(builder->getInt8(0), nullPos);
+
+    // Print the hex address
+    llvm::Value* bytesWrittenHex = builder->CreateAlloca(
+        builder->getInt32Ty(), nullptr, "bytes.written.hex");
+
+    builder->CreateCall(
+        writeFileAddr,
+        {stdoutHandleAddr, hexBuffer, builder->getInt32(16), bytesWrittenHex,
+         llvm::ConstantPointerNull::get(
+             llvm::PointerType::getUnqual(*context))});
+
+    // Add newline
+    llvm::Constant* newlineStrAddr =
+        builder->CreateGlobalString("\n", "newline.addr");
+    llvm::Value* newlinePtrAddr = builder->CreatePointerCast(
+        newlineStrAddr, llvm::PointerType::getUnqual(*context));
+    llvm::Value* bytesWrittenNewline = builder->CreateAlloca(
+        builder->getInt32Ty(), nullptr, "bytes.written.newline");
+    builder->CreateCall(writeFileAddr,
+                        {stdoutHandleAddr, newlinePtrAddr, builder->getInt32(1),
+                         bytesWrittenNewline,
+                         llvm::ConstantPointerNull::get(
+                             llvm::PointerType::getUnqual(*context))});
+
+    return result;
 
   } else if (name == "exit" && args.size() >= 1) {
     // Use ExitProcess API as before
@@ -577,6 +690,37 @@ llvm::Type* CodeGen::typeToLLVMType(TypeNode& type) {
     // In newer LLVM versions, use getPtrTy() for opaque pointers
     return llvm::PointerType::getUnqual(*context);
   }
+  // Memory model types
+  if (dynamic_cast<ReferenceTypeNode*>(&type)) {
+    std::cout << "[CodeGen] Found ReferenceTypeNode" << std::endl;
+    // References are implemented as pointers in LLVM
+    return llvm::PointerType::getUnqual(*context);
+  }
+  if (dynamic_cast<OwnedPointerTypeNode*>(&type)) {
+    std::cout << "[CodeGen] Found OwnedPointerTypeNode" << std::endl;
+    // Owned pointers are also implemented as pointers in LLVM
+    return llvm::PointerType::getUnqual(*context);
+  }
+  if (dynamic_cast<NullableTypeNode*>(&type)) {
+    std::cout << "[CodeGen] Found NullableTypeNode" << std::endl;
+    // Nullable types can be implemented as pointers (null = nullptr)
+    // Or as a struct with a flag, but pointer is simpler for now
+    return llvm::PointerType::getUnqual(*context);
+  }
+  if (dynamic_cast<SliceTypeNode*>(&type)) {
+    std::cout << "[CodeGen] Found SliceTypeNode" << std::endl;
+    // Slices are implemented as a struct { ptr, len }
+    std::vector<llvm::Type*> slice_fields = {
+        llvm::PointerType::getUnqual(*context),  // data pointer
+        builder->getInt64Ty()                    // length
+    };
+    return llvm::StructType::get(*context, slice_fields);
+  }
+  if (dynamic_cast<NullTypeNode*>(&type)) {
+    std::cout << "[CodeGen] Found NullTypeNode" << std::endl;
+    // Null type is represented as a void pointer
+    return llvm::PointerType::getUnqual(*context);
+  }
 
   std::cout << "[CodeGen] ERROR: Unknown TypeNode, type info: "
             << typeid(type).name() << std::endl;
@@ -630,11 +774,29 @@ llvm::Value* CodeGen::codegenWithTargetType(ASTNode& node,
     std::cout << "[CodeGen] Casting integer to float" << std::endl;
     return builder->CreateSIToFP(baseValue, targetType, "sitofp");
   }
-
   // Float to integer
   if (baseValue->getType()->isFloatingPointTy() && targetType->isIntegerTy()) {
     std::cout << "[CodeGen] Casting float to integer" << std::endl;
     return builder->CreateFPToSI(baseValue, targetType, "fptosi");
+  }
+
+  // Value to nullable type (represented as pointer)
+  if (targetType->isPointerTy()) {
+    std::cout << "[CodeGen] Casting value to nullable/pointer type"
+              << std::endl;
+    // For nullable types, we need to allocate space and store the value
+    // This is a simplified approach - in a real implementation you'd want
+    // to track whether this is actually a nullable or just a pointer
+
+    // Allocate space for the value
+    llvm::Value* alloca =
+        builder->CreateAlloca(baseValue->getType(), nullptr, "nullable.alloc");
+
+    // Store the value in the allocated space
+    builder->CreateStore(baseValue, alloca);
+
+    // Return the pointer to the stored value
+    return alloca;
   }
 
   std::cout << "[CodeGen] ERROR: Unsupported type casting" << std::endl;
@@ -695,6 +857,14 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
   }
   if (auto* n = dynamic_cast<StringLiteral*>(&node)) {
     std::cout << "[CodeGen] Processing StringLiteral" << std::endl;
+    return codegen(*n);
+  }  // Memory model nodes
+  if (auto* n = dynamic_cast<ReferenceExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing ReferenceExpr" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<DereferenceExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing DereferenceExpr" << std::endl;
     return codegen(*n);
   }
   // ... weitere Knotentypen hier einfügen
@@ -776,24 +946,29 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
             << std::endl;
   llvm::Type* varType = typeToLLVMType(*node.type);
   std::cout << "[CodeGen] LLVM type determined successfully" << std::endl;
-
-  // 1. Generiere den Code für den Initialisierungswert mit dem richtigen Typ.
-  std::cout << "[CodeGen] Generating initializer for variable: " << node.name
-            << std::endl;
-  llvm::Value* initializerVal =
-      codegenWithTargetType(*node.initializer, varType);
-  std::cout << "[CodeGen] Initializer generated successfully" << std::endl;
-
   // 3. Erzeuge eine 'alloca'-Instruktion.
   std::cout << "[CodeGen] Creating alloca for variable: " << node.name
             << std::endl;
   llvm::Value* alloca = builder->CreateAlloca(varType, nullptr, node.name);
   std::cout << "[CodeGen] Alloca created successfully" << std::endl;
 
-  // 4. Speichere den Initialisierungswert in dem reservierten Speicher.
-  std::cout << "[CodeGen] Storing initializer value in alloca" << std::endl;
-  builder->CreateStore(initializerVal, alloca);
-  std::cout << "[CodeGen] Store instruction created successfully" << std::endl;
+  // 1. Generate initializer only if provided
+  if (node.initializer != nullptr) {
+    std::cout << "[CodeGen] Generating initializer for variable: " << node.name
+              << std::endl;
+    llvm::Value* initializerVal =
+        codegenWithTargetType(*node.initializer, varType);
+    std::cout << "[CodeGen] Initializer generated successfully" << std::endl;
+
+    // 4. Speichere den Initialisierungswert in dem reservierten Speicher.
+    std::cout << "[CodeGen] Storing initializer value in alloca" << std::endl;
+    builder->CreateStore(initializerVal, alloca);
+    std::cout << "[CodeGen] Store instruction created successfully"
+              << std::endl;
+  } else {
+    std::cout << "[CodeGen] Variable " << node.name
+              << " declared without initializer" << std::endl;
+  }
   // 5. Merke dir den Speicherort der Variable in unserer "Symboltabelle".
   named_values[node.name] = alloca;
   variable_types[node.name] =
@@ -806,6 +981,14 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
 
 llvm::Value* CodeGen::codegen(Identifier& node) {
   std::cout << "[CodeGen] Generating Identifier: " << node.name << std::endl;
+
+  // Special case: handle null literal
+  if (node.name == "null") {
+    std::cout << "[CodeGen] Generating null literal" << std::endl;
+    return llvm::ConstantPointerNull::get(
+        llvm::PointerType::getUnqual(*context));
+  }
+
   // 1. Suche die Variable in unserer Symboltabelle.
   auto it = named_values.find(node.name);
   if (it == named_values.end()) {
@@ -1140,10 +1323,12 @@ llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
     if (!argValue) return nullptr;
     args.push_back(argValue);
   }
-
   // Validate argument count for specific builtins
   if (node.builtin_name == "print" && args.size() != 1) {
     throw std::runtime_error("$$print expects exactly 1 argument");
+  }
+  if (node.builtin_name == "print_addr" && args.size() != 1) {
+    throw std::runtime_error("$$print_addr expects exactly 1 argument");
   }
   if (node.builtin_name == "exit" && args.size() != 1) {
     throw std::runtime_error("$$exit expects exactly 1 argument");
@@ -1456,4 +1641,65 @@ llvm::Value* CodeGen::codegen(ReturnStmtNode& node) {
     // Return void
     return builder->CreateRetVoid();
   }
+}
+
+// --- Memory Model Code Generation ---
+
+llvm::Value* CodeGen::codegen(ReferenceExpr& node) {
+  std::cout << "[CodeGen] Generating ReferenceExpr" << std::endl;
+
+  if (!node.operand) {
+    std::cout << "[CodeGen] ERROR: ReferenceExpr missing operand" << std::endl;
+    return nullptr;
+  }
+
+  // For taking a reference, we need the address of the operand
+  if (auto* identifier = dynamic_cast<Identifier*>(node.operand.get())) {
+    // Look up the variable in our symbol table
+    auto it = named_values.find(identifier->name);
+    if (it == named_values.end()) {
+      std::cout << "[CodeGen] ERROR: Unknown variable: " << identifier->name
+                << std::endl;
+      return nullptr;
+    }
+
+    // Return the address of the variable (which is already a pointer from
+    // alloca)
+    std::cout << "[CodeGen] Taking reference of variable: " << identifier->name
+              << std::endl;
+    return it->second;  // The LLVM value is already the address
+  }
+
+  std::cout << "[CodeGen] ERROR: Can only take reference of variables currently"
+            << std::endl;
+  return nullptr;
+}
+
+llvm::Value* CodeGen::codegen(DereferenceExpr& node) {
+  std::cout << "[CodeGen] Generating DereferenceExpr" << std::endl;
+
+  if (!node.operand) {
+    std::cout << "[CodeGen] ERROR: DereferenceExpr missing operand"
+              << std::endl;
+    return nullptr;
+  }
+
+  // Generate code for the pointer expression
+  llvm::Value* pointer = codegen(*node.operand);
+  if (!pointer) {
+    std::cout << "[CodeGen] ERROR: Failed to generate pointer for dereference"
+              << std::endl;
+    return nullptr;
+  }
+
+  // Check if it's a pointer type
+  if (!pointer->getType()->isPointerTy()) {
+    std::cout << "[CodeGen] ERROR: Attempting to dereference non-pointer type"
+              << std::endl;
+    return nullptr;
+  }
+
+  // Load the value from the pointer
+  std::cout << "[CodeGen] Dereferencing pointer" << std::endl;
+  return builder->CreateLoad(builder->getInt32Ty(), pointer, "deref");
 }

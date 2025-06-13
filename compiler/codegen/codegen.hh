@@ -43,6 +43,14 @@ class IntegerLiteralTypeNode;
 class FloatLiteralTypeNode;
 class BinaryExpr;
 class Identifier;
+// Memory model forward declarations
+class ReferenceExpr;
+class DereferenceExpr;
+class ReferenceTypeNode;
+class OwnedPointerTypeNode;
+class NullableTypeNode;
+class SliceTypeNode;
+class NullTypeNode;
 
 class CodeGen {
  public:
@@ -86,7 +94,9 @@ class CodeGen {
   llvm::Value* codegen(FunctionDeclNode& node);
   llvm::Value* codegen(ReturnStmtNode& node);
   llvm::Value* codegen(BinaryExpr& node);
-  llvm::Value* codegen(Identifier& node);
+  llvm::Value* codegen(Identifier& node);  // Memory model code generation
+  llvm::Value* codegen(ReferenceExpr& node);
+  llvm::Value* codegen(DereferenceExpr& node);
   llvm::Type* typeToLLVMType(TypeNode& type);
 
   // Generate code for a node with a specific target type (for type casting)
