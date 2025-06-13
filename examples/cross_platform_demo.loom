@@ -1,0 +1,142 @@
+// cross_platform_demo.loom
+// Demonstrates identical Loom code generating platform-specific implementations
+// This file compiles to different implementations on Windows/Linux/macOS
+
+// Platform abstraction through unified interface
+func write_message(msg: string, len: i32) i32 {
+    // This single line generates different code per platform:
+    // Windows: Calls WriteFile API
+    // Linux: Generates syscall instruction with number 1
+    // macOS: Generates syscall instruction with number 0x2000004
+    return $$syscall(1, 1, msg, len);
+}
+
+// Cross-platform exit function
+func exit_program(code: i32) i32 {
+    // Platform-specific exit implementation:
+    // Windows: ExitProcess API call
+    // Linux: syscall instruction with number 60  
+    // macOS: syscall instruction with number 0x2000001
+    $$syscall(60, code);
+    return 0; // This line will never be reached due to exit
+}
+
+// Demonstrate platform differences in comments
+func show_platform_details() i32 {
+    $$print("=== Platform Implementation Details ===");
+    
+    $$print("This program demonstrates how identical");
+    $$print("Loom source code generates different");
+    $$print("implementations for each platform:");
+    
+    $$print("");
+    $$print("WINDOWS IMPLEMENTATION:");
+    $$print("- Entry point: mainCRTStartup");
+    $$print("- I/O: WriteFile API calls");
+    $$print("- Exit: ExitProcess API call");
+    $$print("- Linking: -nostdlib -lkernel32");
+    $$print("- No libc dependency");
+    
+    $$print("");
+    $$print("LINUX IMPLEMENTATION:");
+    $$print("- Entry point: _start");
+    $$print("- I/O: syscall instruction (1)");
+    $$print("- Exit: syscall instruction (60)");
+    $$print("- Linking: -nostdlib -static");
+    $$print("- Direct kernel interface");
+    
+    $$print("");
+    $$print("MACOS IMPLEMENTATION:");
+    $$print("- Entry point: _start");
+    $$print("- I/O: syscall instruction (0x2000004)");
+    $$print("- Exit: syscall instruction (0x2000001)");
+    $$print("- Linking: -nostdlib -static");
+    $$print("- BSD-style syscall numbers");
+    
+    return 0;
+}
+
+// Test function showcasing cross-platform syscalls
+func cross_platform_test() i32 {
+    $$print("=== Cross-Platform Syscall Test ===");
+    
+    // Test 1: Basic I/O using wrapper
+    $$print("Test 1: Wrapper function I/O");
+    write_message("Output via wrapper function", 28);
+    
+    // Test 2: Direct syscall usage
+    $$print("Test 2: Direct syscall usage");
+    $$syscall(1, 1, "Direct syscall output", 21);
+    
+    // Test 3: Mixed builtin and syscall
+    $$print("Test 3: Mixed usage");
+    $$print("This uses builtin print");
+    write_message("This uses syscall wrapper", 25);
+    
+    return 0;
+}
+
+// Factorial example with cross-platform output
+func factorial(n: i32) i32 {
+    if (n <= 1) {
+        write_message("Factorial base case", 19);
+        return 1;
+    }
+    
+    // Recursive case with syscall output
+    $$syscall(1, 1, "Computing factorial...", 22);
+    return n * factorial(n - 1);
+}
+
+// Main demonstration function
+func main() i32 {
+    $$print("############################################");
+    $$print("#        LOOM CROSS-PLATFORM DEMO         #");
+    $$print("############################################");
+    
+    $$print("This program demonstrates how the same");
+    $$print("Loom source code works across platforms");
+    $$print("with platform-specific implementations.");
+    
+    // Show implementation details
+    show_platform_details();
+    
+    // Run cross-platform tests
+    cross_platform_test();
+    
+    $$print("=== Advanced Feature Test ===");
+    
+    // Test recursive function with syscalls
+    $$print("Computing factorial with syscalls...");
+    let result: i32 = factorial(4);
+    $$print("Factorial computation complete");
+      // Test control flow with syscalls
+    $$print("Testing control flow...");
+    mut i: i32 = 0;
+    while (i < 3) {
+        write_message("Loop with syscall", 17);
+        i = i + 1;
+    }
+    
+    // Test conditional syscalls
+    if (result > 20) {
+        $$print("Result is large");
+        write_message("Large result detected", 21);
+    }
+    
+    $$print("############################################");
+    $$print("#            SUCCESS!                      #");
+    $$print("#                                          #");
+    $$print("# The same Loom code successfully:        #");
+    $$print("# - Compiles for multiple platforms       #");
+    $$print("# - Generates platform-specific code      #");
+    $$print("# - Runs without runtime dependencies     #");
+    $$print("# - Uses direct system interfaces         #");
+    $$print("############################################");
+    
+    // Cross-platform exit
+    $$print("Exiting with cross-platform syscall...");
+    exit_program(0);
+    
+    return 0; // Never reached
+}

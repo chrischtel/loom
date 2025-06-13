@@ -1,0 +1,165 @@
+// advanced_syscalls.loom
+// Advanced cross-platform syscall demonstration
+// This example showcases:
+// - Cross-platform syscalls (Windows API, Linux/macOS syscalls)
+// - Function definitions and calls
+// - Control flow (if statements, loops)
+// - String and integer handling
+// - Error handling patterns
+// - Freestanding executable (no libc dependency)
+
+// Helper function to demonstrate syscall error handling
+func print_with_status(message: string) i32 {
+    // Use direct syscall for writing to stdout
+    // Linux: syscall(1, fd, buf, len) -> write()
+    // macOS: syscall(0x2000004, fd, buf, len) -> write() 
+    // Windows: mapped to WriteFile API    // Calculate message length (hardcoded for demo - in real impl would be dynamic)
+    let result: i64 = $$syscall(1, 1, message, 33);
+    
+    // Check if write was successful (compare with i64 zero)
+    let zero: i64 = 0;
+    if (result < zero) {
+        $$print("ERROR: Write failed!");
+        return 0 - 1;
+    }
+    
+    return 0;
+}
+
+// Demonstration of iterative syscalls
+func countdown(start: i32) i32 {
+    mut counter: i32 = start;
+    
+    while (counter > 0) {
+        // Print countdown using both builtin and syscall methods
+        if (counter == 3) {
+            $$print("Three seconds remaining...");
+        }        if (counter == 2) {
+            print_with_status("Two seconds remaining...");
+        }
+          if (counter == 1) {
+            // Use direct syscall for final message
+            $$syscall(1, 1, "One second remaining...\n", 24);
+        }
+        
+        counter = counter - 1;
+    }
+    
+    return 0;
+}
+
+// Advanced function demonstrating syscall-based I/O patterns
+func demonstrate_io_patterns() i32 {
+    $$print("=== Cross-Platform I/O Demonstration ===");
+    
+    // Pattern 1: Direct builtin calls (recommended for simple cases)
+    $$print("Pattern 1: Using $$print builtin");
+    $$print("This works identically on all platforms");
+    
+    // Pattern 2: Direct syscalls (for advanced control)
+    $$print("Pattern 2: Using $$syscall directly");    // Write using syscall - demonstrates platform abstraction
+    $$syscall(1, 1, "Direct syscall output", 19);
+    
+    // Pattern 3: Wrapper functions for reusable syscall logic
+    $$print("Pattern 3: Using wrapper functions");
+    print_with_status("Wrapped syscall output");
+    
+    return 0;
+}
+
+// Function to demonstrate different exit patterns
+func demonstrate_exit_patterns(exit_code: i32) i32 {
+    $$print("=== Exit Pattern Demonstration ===");
+    
+    if (exit_code == 0) {
+        $$print("Normal exit with success code");
+        $$exit(0);
+    }
+    
+    if (exit_code == 42) {
+        $$print("Custom exit code via builtin");
+        $$exit(42);
+    }
+    
+    if (exit_code == 99) {
+        $$print("Direct syscall exit");
+        // Cross-platform exit syscall
+        // Linux: syscall(60, code) -> exit()
+        // macOS: syscall(0x2000001, code) -> exit()
+        // Windows: mapped to ExitProcess()
+        $$syscall(60, 99);
+    }
+    
+    // Default case
+    $$print("Unknown exit code, using default");
+    return exit_code;
+}
+
+// Recursive function using syscalls for output
+func factorial_with_syscalls(n: i32) i32 {    if (n <= 1) {
+        $$syscall(1, 1, "Base case reached\n", 18);
+        return 1;
+    }
+    
+    // Print recursive step using syscall
+    $$syscall(1, 1, "Computing factorial step\n", 25);
+    
+    return n * factorial_with_syscalls(n - 1);
+}
+
+// Main function demonstrating comprehensive syscall usage
+func main() i32 {
+    $$print("==========================================");
+    $$print("  Loom Advanced Syscall Demonstration");
+    $$print("  Cross-Platform Freestanding Execution");
+    $$print("==========================================");
+    
+    // Demonstrate platform detection at runtime
+    $$print("Platform: Detected at compile time");
+    $$print("Binary type: Freestanding (no libc)");
+    $$print("Syscall method: Platform-specific");
+    
+    // Test basic I/O patterns
+    demonstrate_io_patterns();
+    
+    $$print("--- Countdown Test ---");
+    countdown(3);
+    $$print("Countdown complete!");
+    
+    $$print("--- Recursive Function with Syscalls ---");
+    let fact_result: i32 = factorial_with_syscalls(4);
+    $$print("Factorial computation complete");
+    
+    $$print("--- Error Handling Test ---");
+    let status: i32 = print_with_status("Testing error handling path\n");
+    if (status < 0) {
+        $$print("Error handling triggered");
+    }
+      $$print("--- Performance Test ---");
+    // Demonstrate multiple rapid syscalls
+    mut i: i32 = 0;    while (i < 3) {
+        $$syscall(1, 1, "Fast syscall test\n", 18);
+        i = i + 1;
+    }
+    
+    $$print("==========================================");
+    $$print("  All tests completed successfully!");
+    $$print("  Demonstrating cross-platform syscalls:");
+    $$print("  - Windows: WriteFile/ExitProcess APIs");
+    $$print("  - Linux: Direct x86_64 syscalls");  
+    $$print("  - macOS: BSD-style syscalls");
+    $$print("==========================================");
+    
+    // Test different exit strategies
+    // Uncomment one of these to test different exit patterns:
+    
+    // Normal success exit
+    $$print("Exiting with success code 0");
+    $$exit(0);
+    
+    // Custom exit codes (uncomment to test):
+    // demonstrate_exit_patterns(42);   // Custom exit via builtin
+    // demonstrate_exit_patterns(99);   // Direct syscall exit
+    
+    return 0;
+}

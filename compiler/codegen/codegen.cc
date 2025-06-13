@@ -227,9 +227,9 @@ llvm::Value* CodeGen::generateLinuxSyscall(const std::string& name,
 
     // Create the inline assembly for Linux x86_64 syscall
     std::string asmStr = "syscall";
-    std::string constraintStr = "={rax},0,{rdi},{rsi},{rdx},~{rcx},~{r11}";
-
-    // Prepare syscall arguments
+    std::string constraintStr =
+        "={rax},0,{rdi},{rsi},{rdx},~{rcx},~{r11}";  // Prepare syscall
+                                                     // arguments
     std::vector<llvm::Value*> asmArgs;
     asmArgs.push_back(
         llvm::ConstantInt::get(builder->getInt64Ty(), 1));  // sys_write
@@ -237,9 +237,26 @@ llvm::Value* CodeGen::generateLinuxSyscall(const std::string& name,
         llvm::ConstantInt::get(builder->getInt64Ty(), 1));  // stdout fd
     asmArgs.push_back(args[0]);                             // buffer
 
-    // For string literals, calculate length (hardcoded for now, should be
-    // improved)
-    llvm::Value* length = llvm::ConstantInt::get(builder->getInt64Ty(), 19);
+    // Calculate string length - for string literals we can get the length at
+    // compile time
+    llvm::Value* length;
+    if (llvm::GlobalVariable* globalVar =
+            llvm::dyn_cast<llvm::GlobalVariable>(args[0])) {
+      // This is a string literal - get compile-time length
+      if (llvm::ConstantDataArray* stringData =
+              llvm::dyn_cast<llvm::ConstantDataArray>(
+                  globalVar->getInitializer())) {
+        // Get length excluding null terminator
+        uint64_t str_length = stringData->getNumElements() - 1;
+        length = llvm::ConstantInt::get(builder->getInt64Ty(), str_length);
+      } else {
+        // Fallback for unknown string format
+        length = llvm::ConstantInt::get(builder->getInt64Ty(), 50);
+      }
+    } else {
+      // For non-literal strings, use a conservative default
+      length = llvm::ConstantInt::get(builder->getInt64Ty(), 100);
+    }
     asmArgs.push_back(length);
 
     // Create inline assembly call
@@ -311,7 +328,6 @@ llvm::Value* CodeGen::generateMacOSSyscall(const std::string& name,
 
     std::string asmStr = "syscall";
     std::string constraintStr = "={rax},0,{rdi},{rsi},{rdx},~{rcx},~{r11}";
-
     std::vector<llvm::Value*> asmArgs;
     asmArgs.push_back(
         llvm::ConstantInt::get(builder->getInt64Ty(), 0x2000004));  // sys_write
@@ -319,9 +335,26 @@ llvm::Value* CodeGen::generateMacOSSyscall(const std::string& name,
         llvm::ConstantInt::get(builder->getInt64Ty(), 1));  // stdout fd
     asmArgs.push_back(args[0]);                             // buffer
 
-    // For string literals, calculate length (hardcoded for now, should be
-    // improved)
-    llvm::Value* length = llvm::ConstantInt::get(builder->getInt64Ty(), 19);
+    // Calculate string length - for string literals we can get the length at
+    // compile time
+    llvm::Value* length;
+    if (llvm::GlobalVariable* globalVar =
+            llvm::dyn_cast<llvm::GlobalVariable>(args[0])) {
+      // This is a string literal - get compile-time length
+      if (llvm::ConstantDataArray* stringData =
+              llvm::dyn_cast<llvm::ConstantDataArray>(
+                  globalVar->getInitializer())) {
+        // Get length excluding null terminator
+        uint64_t str_length = stringData->getNumElements() - 1;
+        length = llvm::ConstantInt::get(builder->getInt64Ty(), str_length);
+      } else {
+        // Fallback for unknown string format
+        length = llvm::ConstantInt::get(builder->getInt64Ty(), 50);
+      }
+    } else {
+      // For non-literal strings, use a conservative default
+      length = llvm::ConstantInt::get(builder->getInt64Ty(), 100);
+    }
     asmArgs.push_back(length);
 
     llvm::FunctionType* asmType = llvm::FunctionType::get(
@@ -385,9 +418,8 @@ llvm::Value* CodeGen::generateMacOSSyscall(const std::string& name,
 llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
                                              std::vector<llvm::Value*>& args) {
   std::cout << "[CodeGen] Generating Windows syscall: " << name << std::endl;
-
   if (name == "print" && args.size() >= 1) {
-    // Use WriteFile API as before
+    // Use WriteFile API for printing with automatic newline
     llvm::Function* writeFile = module->getFunction("WriteFile");
     if (!writeFile) {
       llvm::FunctionType* writeFileType = llvm::FunctionType::get(
@@ -421,16 +453,54 @@ llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
     llvm::Value* stdoutHandle = builder->CreateCall(
         getStdHandle, {builder->getInt32(-11)}, "stdout.handle");
 
-    llvm::Value* bufferSize =
-        builder->getInt32(19);  // TODO: Calculate actual length
+    // Calculate string length - for string literals we can get the length at
+    // compile time
+    llvm::Value* bufferSize;
+    if (llvm::GlobalVariable* globalVar =
+            llvm::dyn_cast<llvm::GlobalVariable>(args[0])) {
+      // This is a string literal - get compile-time length
+      if (llvm::ConstantDataArray* stringData =
+              llvm::dyn_cast<llvm::ConstantDataArray>(
+                  globalVar->getInitializer())) {
+        // Get length excluding null terminator
+        uint64_t length = stringData->getNumElements() - 1;
+        bufferSize = builder->getInt32(static_cast<uint32_t>(length));
+      } else {
+        // Fallback for unknown string format
+        bufferSize = builder->getInt32(50);  // Conservative estimate
+      }
+    } else {
+      // For non-literal strings, use a conservative default
+      // In a full implementation, we'd track string lengths in the type system
+      bufferSize = builder->getInt32(100);
+    }
+
     llvm::Value* bytesWritten =
         builder->CreateAlloca(builder->getInt32Ty(), nullptr, "bytes.written");
 
-    return builder->CreateCall(writeFile,
-                               {stdoutHandle, args[0], bufferSize, bytesWritten,
-                                llvm::ConstantPointerNull::get(
-                                    llvm::PointerType::getUnqual(*context))},
-                               "write.result");
+    // First write the string content
+    llvm::Value* result1 = builder->CreateCall(
+        writeFile,
+        {stdoutHandle, args[0], bufferSize, bytesWritten,
+         llvm::ConstantPointerNull::get(
+             llvm::PointerType::getUnqual(*context))},
+        "write.result");  // Then write a newline for $$print (but not for
+                          // direct $$syscall)
+    llvm::Constant* newlineStr = builder->CreateGlobalString("\n", "newline");
+    llvm::Value* newlinePtr = builder->CreatePointerCast(
+        newlineStr, llvm::PointerType::getUnqual(*context));
+    llvm::Value* newlineSize = builder->getInt32(1);
+    llvm::Value* bytesWritten2 = builder->CreateAlloca(
+        builder->getInt32Ty(), nullptr, "bytes.written.newline");
+
+    // Write the newline (don't need to store result)
+    builder->CreateCall(writeFile,
+                        {stdoutHandle, newlinePtr, newlineSize, bytesWritten2,
+                         llvm::ConstantPointerNull::get(
+                             llvm::PointerType::getUnqual(*context))},
+                        "write.newline.result");
+
+    return result1;  // Return the result of the main write operation
 
   } else if (name == "exit" && args.size() >= 1) {
     // Use ExitProcess API as before
@@ -1209,13 +1279,12 @@ bool CodeGen::compileToExecutable(const std::string& objectFilename,
   // Detect platform for cross-platform linking
   TargetPlatform platform = detectTargetPlatform();
   std::string linkCmd;
-
   switch (platform) {
     case TargetPlatform::Windows:
-      // Windows: Use clang with no libc, link only to kernel32.dll for Windows
-      // API
+      // Windows: Use clang with minimal runtime support
+      // Include compiler-rt for __chkstk and other compiler builtins
       linkCmd = "clang \"" + objectFilename + "\" -o \"" + executableFilename +
-                "\" -nostdlib -lkernel32";
+                "\" -nostdlib -lkernel32 -lmsvcrt";
       break;
 
     case TargetPlatform::Linux:

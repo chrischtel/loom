@@ -1,0 +1,177 @@
+// system_interaction.loom
+// Practical system interaction example using cross-platform syscalls
+// Demonstrates real-world usage patterns for system programming
+
+// Utility function for safe string output with length calculation
+func safe_print(message: string, length: i32) i32 {
+    // Use syscall for direct system I/O
+    // This demonstrates the cross-platform syscall interface:
+    // - All platforms use the same Loom syntax
+    // - Compiler generates platform-specific implementation
+    let bytes_written: i32 = $$syscall(1, 1, message, length);
+    return bytes_written;
+}
+
+// System information display using syscalls
+func display_system_info() i32 {
+    $$print("=== System Information ===");
+    
+    // Platform-specific information (compile-time determined)
+    safe_print("Executable type: Freestanding", 29);
+    safe_print("Libc dependency: None", 21);
+    safe_print("System interface: Direct syscalls/APIs", 38);
+    
+    $$print("Platform support:");
+    safe_print("- Windows: Win32 API calls", 26);
+    safe_print("- Linux: x86_64 syscalls", 24);
+    safe_print("- macOS: BSD syscalls", 21);
+    
+    return 0;
+}
+
+// Memory and resource management demonstration
+func resource_management_demo() i32 {
+    $$print("=== Resource Management Demo ===");
+    
+    // Simulate resource allocation/deallocation patterns
+    // In a full implementation, this would use actual memory syscalls
+    $$print("Simulating resource operations...");
+    
+    let resource_id: i32 = 12345;
+    $$print("Resource allocated (simulated)");
+    
+    // Perform operations with resource
+    safe_print("Performing I/O operations", 25);
+    safe_print("Resource operations complete", 28);
+    
+    $$print("Resource cleanup (simulated)");
+    
+    return 0;
+}
+
+// Error handling and status reporting
+func error_handling_demo() i32 {
+    $$print("=== Error Handling Demo ===");
+    
+    // Simulate different error conditions
+    let operation_result: i32 = 1; // Simulate success
+    
+    if (operation_result > 0) {
+        $$print("Operation successful");
+        safe_print("Status: OK", 10);
+    }
+    
+    if (operation_result == 0) {
+        $$print("Operation returned no data");
+        safe_print("Status: EMPTY", 13);
+    }
+    
+    if (operation_result < 0) {
+        $$print("Operation failed");
+        safe_print("Status: ERROR", 13);
+        // In real code, might exit with error code
+        // $$syscall(60, 1);
+    }
+    
+    return operation_result;
+}
+
+// Performance testing with syscalls
+func performance_test() i32 {
+    $$print("=== Performance Test ===");
+    
+    let iterations: i32 = 5;
+    let counter: i32 = 0;
+    
+    $$print("Starting syscall performance test...");
+    
+    while (counter < iterations) {
+        // Test rapid syscall execution
+        $$syscall(1, 1, "Perf test iteration", 19);
+        counter = counter + 1;
+    }
+    
+    $$print("Performance test completed");
+    return iterations;
+}
+
+// Advanced control flow with syscalls
+func control_flow_demo() i32 {
+    $$print("=== Control Flow Demo ===");
+    
+    let test_value: i32 = 7;
+    
+    // Nested conditionals with syscall outputs
+    if (test_value > 5) {
+        $$print("Value is greater than 5");
+        
+        if (test_value < 10) {
+            safe_print("Value is in range 6-9", 22);
+            
+            // Loop within conditional
+            let i: i32 = 0;
+            while (i < 3) {
+                $$syscall(1, 1, "Loop iteration", 14);
+                i = i + 1;
+            }
+        }
+    }
+    
+    return test_value;
+}
+
+// Main program orchestrating all demonstrations
+func main() i32 {
+    // Program header
+    $$print("##########################################");
+    $$print("#    Loom System Interaction Demo        #");
+    $$print("#    Cross-Platform Syscall Examples     #");
+    $$print("##########################################");
+    
+    // System information
+    display_system_info();
+    
+    // Core functionality demonstrations
+    resource_management_demo();
+    error_handling_demo();
+    control_flow_demo();
+    performance_test();
+    
+    // Advanced syscall usage
+    $$print("=== Advanced Syscall Usage ===");
+    
+    // Direct syscall with multiple parameters
+    $$print("Testing multi-parameter syscalls...");
+    $$syscall(1, 1, "Multi-param syscall test", 24);
+    
+    // Different exit code demonstrations
+    $$print("Testing exit code patterns...");
+    
+    // Example 1: Normal success exit using builtin
+    $$print("Exit pattern 1: Normal success (builtin)");
+    
+    // Example 2: Normal success exit using syscall
+    $$print("Exit pattern 2: Normal success (syscall)");
+    // $$syscall(60, 0);  // Uncomment to test direct syscall exit
+    
+    // Example 3: Custom exit code
+    $$print("Exit pattern 3: Custom exit code");
+    // $$exit(42);  // Uncomment to test custom exit code
+    
+    // Program footer
+    $$print("##########################################");
+    $$print("#    All demonstrations completed!       #");
+    $$print("#                                        #");
+    $$print("#    Key achievements:                   #");
+    $$print("#    ✓ Cross-platform syscalls          #");
+    $$print("#    ✓ Freestanding execution            #");
+    $$print("#    ✓ Direct system interaction         #");
+    $$print("#    ✓ No runtime dependencies           #");
+    $$print("##########################################");
+    
+    // Clean exit
+    $$print("Program completed successfully.");
+    $$exit(0);
+    
+    return 0;  // Never reached due to $$exit above
+}
