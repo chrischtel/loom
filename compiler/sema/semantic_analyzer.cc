@@ -154,10 +154,7 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
   }
 
   // Schritt 6: Definiere die Variable in der Symboltabelle.
-  SymbolInfo info;
-  info.kind = node.kind;
-  info.type = std::shared_ptr<TypeNode>(final_type.release());
-  if (!symbols.define(node.name, std::move(info))) {
+  if (!symbols.defineVariable(node.name, node.kind, std::move(final_type))) {
     error(node.location,
           "Variable '" + node.name + "' is already declared in this scope.");
   }
@@ -206,8 +203,16 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(Identifier& node) {
   if (info == nullptr) {
     error(node.location, "Undeclared identifier '" + node.name + "'.");
     return nullptr;
-  }  // Create a copy by using the visitor pattern on the stored type
-  return info->type->accept(*this);
+  }
+
+  // Get the variable info from the symbol data
+  if (info->kind != SymbolKind::VARIABLE) {
+    error(node.location, "'" + node.name + "' is not a variable.");
+    return nullptr;
+  }
+
+  const VariableInfo& var_info = std::get<VariableInfo>(info->data);
+  return var_info.type->accept(*this);
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(AssignmentExpr& node) {
@@ -220,16 +225,47 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(AssignmentExpr& node) {
     error(node.location, "Undeclared identifier '" + node.name + "'.");
     return nullptr;
   }
-  if (info->kind != VarDeclKind::MUT) {
+  // Get the variable info from the symbol
+  if (info->kind != SymbolKind::VARIABLE) {
+    error(node.location, "'" + node.name + "' is not a variable.");
+    return nullptr;
+  }
+
+  const VariableInfo& var_info = std::get<VariableInfo>(info->data);
+
+  if (var_info.kind != VarDeclKind::MUT) {
     error(node.location,
           "Cannot assign to immutable variable '" + node.name + "'.");
     return nullptr;
   }
-  if (!info->type->isEqualTo(value_type.get())) {
+
+  // Check type compatibility with literal conversion support
+  bool types_compatible = false;
+
+  if (var_info.type->isEqualTo(value_type.get())) {
+    types_compatible = true;
+  } else {
+    // Check for literal conversion
+    if (auto int_literal =
+            dynamic_cast<const IntegerLiteralTypeNode*>(value_type.get())) {
+      if (auto target_int =
+              dynamic_cast<const IntegerTypeNode*>(var_info.type.get())) {
+        types_compatible = int_literal->canFitInto(target_int);
+      }
+    } else if (auto float_literal = dynamic_cast<const FloatLiteralTypeNode*>(
+                   value_type.get())) {
+      if (auto target_float =
+              dynamic_cast<const FloatTypeNode*>(var_info.type.get())) {
+        types_compatible = float_literal->canFitInto(target_float);
+      }
+    }
+  }
+
+  if (!types_compatible) {
     error(node.location, "Type mismatch: Cannot assign value of type '" +
                              value_type->getTypeName() + "' to variable '" +
                              node.name + "' of type '" +
-                             info->type->getTypeName() + "'.");
+                             var_info.type->getTypeName() + "'.");
     return nullptr;
   }
 
@@ -415,11 +451,55 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionCallExpr& node) {
 
 // Function-related visitor implementations
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionDeclNode& node) {
-  // TODO: Implement function declaration analysis
-  // For now, just return nullptr to indicate no type (statements don't have
-  // types)
-  error(node.location,
-        "Function declarations not yet implemented in semantic analyzer");
+  if (symbols.isFunction(node.name)) {
+    error(node.location, "Function '" + node.name + "' already defined.");
+    return nullptr;
+  }
+
+  std::vector<std::shared_ptr<TypeNode>> param_types;
+  std::vector<std::string> param_names;
+
+  for (auto& param : node.parameters) {
+    auto param_type = param->type->accept(*this);
+    if (!param_type) return nullptr;
+
+    if (std::find(param_names.begin(), param_names.end(), param->name) !=
+        param_names.end()) {
+      error(param->location, "Duplicate parameter name: " + param->name);
+      return nullptr;
+    }
+    param_types.push_back(std::shared_ptr<TypeNode>(std::move(param_type)));
+    param_names.push_back(param->name);
+  }
+
+  std::shared_ptr<TypeNode> return_type = nullptr;
+  if (node.return_type) {
+    auto ret_type = node.return_type->accept(*this);
+    if (!ret_type) return nullptr;
+    return_type = std::shared_ptr<TypeNode>(ret_type.release());
+  }
+
+  if (!symbols.defineFunction(node.name, param_types, param_names,
+                              return_type)) {
+    error(node.location, "Failed to define function");
+    return nullptr;
+  }
+
+  symbols.enterFunction(node.name);
+
+  // Parameter in lokalen Scope hinzufügen
+  for (size_t i = 0; i < node.parameters.size(); ++i) {
+    symbols.defineVariable(param_names[i], VarDeclKind::LET, param_types[i]);
+  }
+
+  // Body analysieren
+  for (auto& stmt : node.body) {
+    if (stmt) stmt->accept(*this);
+  }
+
+  // Function Scope verlassen
+  symbols.leaveFunction();
+
   return nullptr;
 }
 

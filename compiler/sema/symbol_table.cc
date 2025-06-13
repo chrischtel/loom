@@ -26,3 +26,69 @@ const SymbolInfo* SymbolTable::lookup(const std::string& name) const {
   }
   return nullptr;
 }
+
+bool SymbolTable::defineVariable(const std::string& name, VarDeclKind var_kind,
+                                 std::shared_ptr<TypeNode> type) {
+  VariableInfo var_info{var_kind, type};
+  SymbolInfo symbol_info;
+  symbol_info.kind = SymbolKind::VARIABLE;
+  symbol_info.data = var_info;
+
+  return define(name, symbol_info);
+}
+
+bool SymbolTable::defineFunction(
+    const std::string& name, std::vector<std::shared_ptr<TypeNode>> param_types,
+    std::vector<std::string> param_names,
+    std::shared_ptr<TypeNode> return_type) {
+  FunctionInfo func_info{param_types, return_type, param_names};
+  SymbolInfo info;
+  info.kind = SymbolKind::FUNCTION;
+  info.data = func_info;
+
+  return define(name, info);
+}
+
+const VariableInfo* SymbolTable::lookupVariable(const std::string& name) const {
+  const SymbolInfo* symbol = lookup(name);
+  if (symbol && symbol->kind == SymbolKind::VARIABLE) {
+    return &std::get<VariableInfo>(symbol->data);
+  }
+  return nullptr;
+}
+
+const FunctionInfo* SymbolTable::lookupFunction(const std::string& name) const {
+  const SymbolInfo* symbol = lookup(name);
+
+  if (symbol && symbol->kind == SymbolKind::FUNCTION) {
+    return &std::get<FunctionInfo>(symbol->data);
+  }
+
+  return nullptr;
+}
+
+const std::string& SymbolTable::getCurrentFunction() const {
+  return current_function_name;
+}
+
+bool SymbolTable::isInFunction() const { return current_function_name != ""; }
+
+void SymbolTable::enterFunction(const std::string& function_name) {
+  current_function_name = function_name;
+  enterScope();
+}
+
+void SymbolTable::leaveFunction() {
+  current_function_name = "";
+  leaveScope();
+}
+
+bool SymbolTable::isVariable(const std::string& name) const {
+  const SymbolInfo* symbol = lookup(name);
+  return symbol && symbol->kind == SymbolKind::VARIABLE;
+}
+
+bool SymbolTable::isFunction(const std::string& name) const {
+  const SymbolInfo* symbol = lookup(name);
+  return symbol && symbol->kind == SymbolKind::FUNCTION;
+}
