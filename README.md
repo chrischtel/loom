@@ -1,27 +1,13 @@
 # Loom
 
-Loom is a compiled programming language for efficient system programming. This is a experimental project that aims to provide a simple, statically typed language with direct access to system resources and cross-platform capabilities.
+# Loom
 
+A small experimental programming language I'm building to learn about compiler design and systems programming.
 
-## Features
+## What it does
 
-- **Static typing** with type inference
-- **Function definitions** with typed parameters and return values
-- **Variables** - immutable (`let`) and mutable (`mut`) declarations
-- **Control flow** - if/else statements, while loops
-- **Built-in functions** - `$$print`, `$$syscall`, `$$exit` for system interaction
-- **Direct compilation** to machine code without runtime overhead
-- **Cross-platform** - same code works on Windows, Linux, and macOS
+Currently supports basic programs with functions, variables, and simple control flow. Compiles to native executables without external dependencies.
 
-## Syntax
-
-Basic variable declarations:
-```loom
-let name: string = "world";
-mut counter: i32 = 0;
-```
-
-Functions:
 ```loom
 func fibonacci(n: i32) i32 {
     if (n <= 1) {
@@ -29,10 +15,7 @@ func fibonacci(n: i32) i32 {
     }
     return fibonacci(n - 1) + fibonacci(n - 2);
 }
-```
 
-Complete program:
-```loom
 func main() i32 {
     let result: i32 = fibonacci(10);
     $$print("Result calculated");
@@ -42,31 +25,31 @@ func main() i32 {
 
 ## Building
 
-Requires CMake and a C++ compiler.
-
 ```bash
 mkdir build && cd build
 cmake ..
-make
+ninja
+./bin/loom examples/cross_platform_demo.loom
 ```
 
-## Usage
+## Current status
 
-Compile a Loom file:
+Very early development. 
 
-```bash
-./build/bin/loom examples/cross_platform_demo.loom
-```
+**What's working:**
+- Variable declarations (`let`, `mut`)
+- Function definitions with parameters and return types
+- Basic arithmetic operations (`+`, `-`, `*`, `/`)
+- Comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`)
+- Control flow (`if`/`else`, `while` loops)
+- Built-in functions (`$$print`, `$$exit`, `$$syscall`)
+- Cross-platform compilation (Windows, Linux, macOS)
+- Generates standalone executables
 
-This produces a standalone executable with no external dependencies.
+**What's missing:**
+- No standard library yet
+- Limited error messages  
+- No package system
+- Probably has bugs
 
-## Status
-
-Early development. Loom is not yet feature complete but already supports:
-- variable declarations using `let`, `mut` and `define`
-- function definitions with parameters and return types 
-- basic arithmetic operations 
-- control flow with `if`, `else`, and `while`
-- built-in functions for printing and exiting
-- cross-platform syscall support for Windows, Linux, and macOS (untested on macOS and Linux)
-- freestanding executables with no libc dependencies
+This is a learning project, so feedback and suggestions are welcome!
