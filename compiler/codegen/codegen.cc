@@ -62,13 +62,15 @@ void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
     print_ir();
     throw;  // Re-throw the exception
   }
-
   // 4. Verify all functions in the module
   std::cout << "[CodeGen] Verifying function..." << std::endl;
   for (auto& function : *module) {
     llvm::verifyFunction(function);
   }
   std::cout << "[CodeGen] Function verification completed" << std::endl;
+
+  // 5. Generate Windows entry point for freestanding executable
+  generateEntryPoint();
 
   std::cout << "[CodeGen] Code generation completed successfully!" << std::endl;
   std::cout << "[CodeGen] Generated LLVM IR:" << std::endl;
@@ -86,6 +88,57 @@ void CodeGen::writeIRToFile(const std::string& filename) const {
     return;
   }
   module->print(file, nullptr);
+}
+
+void CodeGen::generateEntryPoint() {
+  std::cout << "[CodeGen] Generating Windows entry point..." << std::endl;
+
+  // Create mainCRTStartup function that calls our main function
+  llvm::FunctionType* entryType = llvm::FunctionType::get(
+      builder->getVoidTy(),  // void return (Windows entry points return void)
+      {},                    // no parameters
+      false                  // not variadic
+  );
+
+  llvm::Function* entryFunc = llvm::Function::Create(
+      entryType, llvm::Function::ExternalLinkage,
+      "mainCRTStartup",  // Windows expects this entry point
+      module.get());
+
+  // Create entry block
+  llvm::BasicBlock* entryBlock =
+      llvm::BasicBlock::Create(*context, "entry", entryFunc);
+  builder->SetInsertPoint(entryBlock);
+
+  // Get the main function
+  llvm::Function* mainFunc = module->getFunction("main");
+  if (!mainFunc) {
+    throw std::runtime_error(
+        "Cannot find main function for entry point generation");
+  }
+
+  // Call main function
+  llvm::Value* mainResult = builder->CreateCall(mainFunc, {}, "main.result");
+
+  // Exit with the result from main
+  // We need to call ExitProcess with the return value from main
+  llvm::Function* exitProcess = module->getFunction("ExitProcess");
+  if (!exitProcess) {
+    // Declare ExitProcess if not already declared
+    llvm::FunctionType* exitProcessType =
+        llvm::FunctionType::get(builder->getVoidTy(),     // void return
+                                {builder->getInt32Ty()},  // UINT uExitCode
+                                false);
+    exitProcess =
+        llvm::Function::Create(exitProcessType, llvm::Function::ExternalLinkage,
+                               "ExitProcess", module.get());
+  }
+  builder->CreateCall(exitProcess, {mainResult});
+
+  // Add an unreachable instruction since ExitProcess never returns
+  builder->CreateUnreachable();
+
+  std::cout << "[CodeGen] Entry point generation completed" << std::endl;
 }
 
 // --- Helper: AST-Typ zu LLVM-Typ ---
@@ -925,9 +978,9 @@ bool CodeGen::compileToExecutable(const std::string& objectFilename,
   std::string linkCmd;
 
 #ifdef _WIN32
-  // Windows: Use link.exe or lld-link
-  linkCmd =
-      "clang \"" + objectFilename + "\" -o \"" + executableFilename + "\"";
+  // Windows: Use clang with no libc, link only to kernel32.dll for Windows API
+  linkCmd = "clang \"" + objectFilename + "\" -o \"" + executableFilename +
+            "\" -nostdlib -lkernel32";
 #else
   // Unix/Linux: Use ld or clang
   linkCmd =

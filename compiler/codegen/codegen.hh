@@ -84,9 +84,11 @@ class CodeGen {
   llvm::Value* codegen(ReturnStmtNode& node);
   llvm::Value* codegen(BinaryExpr& node);
   llvm::Value* codegen(Identifier& node);
-
   llvm::Type* typeToLLVMType(TypeNode& type);
 
   // Generate code for a node with a specific target type (for type casting)
   llvm::Value* codegenWithTargetType(ASTNode& node, llvm::Type* targetType);
+
+  // Generate Windows entry point for freestanding executables
+  void generateEntryPoint();
 };
