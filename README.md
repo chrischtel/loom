@@ -1,7 +1,4 @@
 # Loom
-
-# Loom
-
 A small experimental programming language I'm building to learn about compiler design and systems programming.
 
 ## What it does
