@@ -29,8 +29,9 @@ class BooleanTypeNode;
 class StringTypeNode;
 class IntegerLiteralTypeNode;
 class FloatLiteralTypeNode;
-
-// KORREKTUR 2: Nur noch EIN Visitor-Interface
+class FunctionDeclNode;
+class ParameterNode;
+class ReturnStmtNode;
 class ASTVisitor {
  public:
   virtual ~ASTVisitor() = default;
@@ -42,6 +43,9 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(BinaryExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(UnaryExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(VarDeclNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(FunctionDeclNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(ParameterNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(ReturnStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(ExprStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IfStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(WhileStmtNode& node) = 0;
@@ -426,6 +430,86 @@ class VarDeclNode : public StmtNode {
         type(std::move(t)),
         initializer(std::move(i)) {}
   std::string toString() const override { /* ... */ return "VarDecl(...)"; }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Parameter node for function declarations
+class ParameterNode : public ASTNode {
+ public:
+  std::string name;
+  std::unique_ptr<TypeNode> type;
+
+  ParameterNode(const LoomSourceLocation& loc, const std::string& param_name,
+                std::unique_ptr<TypeNode> param_type)
+      : ASTNode(loc), name(param_name), type(std::move(param_type)) {}
+
+  std::string toString() const override {
+    return name + ": " + (type ? type->toString() : "unknown");
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Function declaration node
+class FunctionDeclNode : public StmtNode {
+ public:
+  std::string name;
+  std::vector<std::unique_ptr<ParameterNode>> parameters;
+  std::unique_ptr<TypeNode> return_type;
+  std::vector<std::unique_ptr<StmtNode>> body;
+
+  FunctionDeclNode(const LoomSourceLocation& loc, const std::string& func_name,
+                   std::vector<std::unique_ptr<ParameterNode>> params,
+                   std::unique_ptr<TypeNode> ret_type,
+                   std::vector<std::unique_ptr<StmtNode>> func_body)
+      : StmtNode(loc),
+        name(func_name),
+        parameters(std::move(params)),
+        return_type(std::move(ret_type)),
+        body(std::move(func_body)) {}
+
+  std::string toString() const override {
+    std::string result = "FunctionDecl(" + name + "(";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += parameters[i] ? parameters[i]->toString() : "null";
+    }
+    result += ") -> ";
+    result += return_type ? return_type->toString() : "void";
+    result += " {";
+    for (size_t i = 0; i < body.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += body[i] ? body[i]->toString() : "null";
+    }
+    result += "})";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Return statement node
+class ReturnStmtNode : public StmtNode {
+ public:
+  std::unique_ptr<ExprNode> expression;  // null for void returns
+
+  ReturnStmtNode(const LoomSourceLocation& loc,
+                 std::unique_ptr<ExprNode> expr = nullptr)
+      : StmtNode(loc), expression(std::move(expr)) {}
+
+  std::string toString() const override {
+    std::string result = "ReturnStmt(";
+    result += expression ? expression->toString() : "void";
+    result += ")";
+    return result;
+  }
+
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
     return visitor.visit(*this);
   }

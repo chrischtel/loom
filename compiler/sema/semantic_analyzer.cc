@@ -412,3 +412,33 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionCallExpr& node) {
     return nullptr;
   }
 }
+
+// Function-related visitor implementations
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionDeclNode& node) {
+  // TODO: Implement function declaration analysis
+  // For now, just return nullptr to indicate no type (statements don't have
+  // types)
+  error(node.location,
+        "Function declarations not yet implemented in semantic analyzer");
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ParameterNode& node) {
+  // TODO: Implement parameter analysis
+  // For now, just return the parameter's type
+  if (node.type) {
+    return node.type->accept(*this);
+  }
+  error(node.location, "Parameter without type");
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ReturnStmtNode& node) {
+  // TODO: Implement return statement analysis
+  // For now, just analyze the expression if present
+  if (node.expression) {
+    return node.expression->accept(*this);
+  }
+  // Return statements don't have types themselves
+  return nullptr;
+}

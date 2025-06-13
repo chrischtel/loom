@@ -19,8 +19,10 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
       return parseVarDeclaration(VarDeclKind::MUT);
     if (match(TokenType::TOKEN_KEYWORD_DEFINE))
       return parseVarDeclaration(VarDeclKind::DEFINE);
+    if (match(TokenType::TOKEN_KEYWORD_FUNC)) return parseFunctionDeclaration();
     if (match(TokenType::TOKEN_KEYWORD_IF)) return parseIfStatement();
     if (match(TokenType::TOKEN_KEYWORD_WHILE)) return parseWhileStatement();
+    if (match(TokenType::TOKEN_KEYWORD_RETURN)) return parseReturnStatement();
 
     return parseExpressionStatement();
   } catch (const ParseError&) {
@@ -113,4 +115,77 @@ std::unique_ptr<StmtNode> Parser::parseWhileStatement() {
 
   return std::make_unique<WhileStmtNode>(while_loc, std::move(condition),
                                          std::move(body));
+}
+
+// Parse function declaration: func name(param1: type1, param2: type2) ->
+// return_type { body }
+std::unique_ptr<StmtNode> Parser::parseFunctionDeclaration() {
+  LoomSourceLocation func_loc = previous().location;
+
+  // Function name
+  consume(TokenType::TOKEN_IDENTIFIER, "Expected function name after 'func'.");
+  std::string func_name = previous().value;
+
+  // Parameters
+  consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after function name.");
+  std::vector<std::unique_ptr<ParameterNode>> parameters;
+
+  if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+    do {
+      parameters.push_back(parseParameter());
+    } while (match(TokenType::TOKEN_COMMA));
+  }
+
+  consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after parameters.");
+
+  // Return type (optional, default to void)
+  std::unique_ptr<TypeNode> return_type = nullptr;
+  if (match(TokenType::TOKEN_MINUS)) {
+    consume(TokenType::TOKEN_GREATER, "Expected '>' after '-' in return type.");
+    return_type = parseType();
+  }
+
+  // Function body
+  consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before function body.");
+  std::vector<std::unique_ptr<StmtNode>> body;
+
+  while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+    if (auto stmt = parseDeclaration()) {
+      body.push_back(std::move(stmt));
+    }
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after function body.");
+
+  return std::make_unique<FunctionDeclNode>(
+      func_loc, func_name, std::move(parameters), std::move(return_type),
+      std::move(body));
+}
+
+// Parse return statement: return expression;
+std::unique_ptr<StmtNode> Parser::parseReturnStatement() {
+  LoomSourceLocation return_loc = previous().location;
+
+  std::unique_ptr<ExprNode> expression = nullptr;
+  if (!check(TokenType::TOKEN_SEMICOLON)) {
+    expression = parseExpression();
+  }
+
+  consume(TokenType::TOKEN_SEMICOLON, "Expected ';' after return statement.");
+
+  return std::make_unique<ReturnStmtNode>(return_loc, std::move(expression));
+}
+
+// Parse parameter: name: type
+std::unique_ptr<ParameterNode> Parser::parseParameter() {
+  LoomSourceLocation param_loc = peek().location;
+
+  consume(TokenType::TOKEN_IDENTIFIER, "Expected parameter name.");
+  std::string param_name = previous().value;
+
+  consume(TokenType::TOKEN_COLON, "Expected ':' after parameter name.");
+  std::unique_ptr<TypeNode> param_type = parseType();
+
+  return std::make_unique<ParameterNode>(param_loc, param_name,
+                                         std::move(param_type));
 }

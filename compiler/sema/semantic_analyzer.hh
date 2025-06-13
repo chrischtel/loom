@@ -34,4 +34,9 @@ class SemanticAnalyzer : public ASTVisitor {
   std::unique_ptr<TypeNode> visit(StringTypeNode& node) override;
   std::unique_ptr<TypeNode> visit(IntegerLiteralTypeNode& node) override;
   std::unique_ptr<TypeNode> visit(FloatLiteralTypeNode& node) override;
+
+  // Function-related visitors
+  std::unique_ptr<TypeNode> visit(FunctionDeclNode& node) override;
+  std::unique_ptr<TypeNode> visit(ParameterNode& node) override;
+  std::unique_ptr<TypeNode> visit(ReturnStmtNode& node) override;
 };

@@ -6,11 +6,13 @@ static const std::unordered_map<std::string_view, TokenType> keywords = {
     {"let", TokenType::TOKEN_KEYWORD_LET},
     {"mut", TokenType::TOKEN_KEYWORD_MUT},
     {"define", TokenType::TOKEN_KEYWORD_DEFINE},
+    {"func", TokenType::TOKEN_KEYWORD_FUNC},
     {"if", TokenType::TOKEN_KEYWORD_IF},
     {"else", TokenType::TOKEN_KEYWORD_ELSE},
     {"true", TokenType::TOKEN_KEYWORD_TRUE},
     {"false", TokenType::TOKEN_KEYWORD_FALSE},
     {"while", TokenType::TOKEN_KEYWORD_WHILE},
+    {"return", TokenType::TOKEN_KEYWORD_RETURN},
 };
 
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
@@ -295,6 +297,8 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_MUT";
     case TokenType::TOKEN_KEYWORD_DEFINE:
       return "TOKEN_KEYWORD_DEFINE";
+    case TokenType::TOKEN_KEYWORD_FUNC:
+      return "TOKEN_KEYWORD_FUNC";
     case TokenType::TOKEN_KEYWORD_IF:
       return "TOKEN_KEYWORD_IF";
     case TokenType::TOKEN_KEYWORD_ELSE:
@@ -305,6 +309,8 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_FALSE";
     case TokenType::TOKEN_KEYWORD_WHILE:
       return "TOKEN_KEYWORD_WHILE";
+    case TokenType::TOKEN_KEYWORD_RETURN:
+      return "TOKEN_KEYWORD_RETURN";
     case TokenType::TOKEN_SEMICOLON:
       return "TOKEN_SEMICOLON";
     case TokenType::TOKEN_COLON:

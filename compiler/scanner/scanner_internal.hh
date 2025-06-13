@@ -37,11 +37,13 @@ enum class TokenType {
   TOKEN_KEYWORD_LET,     // unmutable variabiable declaration
   TOKEN_KEYWORD_MUT,     // mutable variabiable declaration
   TOKEN_KEYWORD_DEFINE,  // compile time known constant declaration
-  TOKEN_KEYWORD_IF,      // if statement
-  TOKEN_KEYWORD_ELSE,    // else statement
+  TOKEN_KEYWORD_FUNC,
+  TOKEN_KEYWORD_IF,    // if statement
+  TOKEN_KEYWORD_ELSE,  // else statement
   TOKEN_KEYWORD_TRUE,
   TOKEN_KEYWORD_FALSE,
   TOKEN_KEYWORD_WHILE,
+  TOKEN_KEYWORD_RETURN,
 
   // Specials
   TOKEN_ERROR
