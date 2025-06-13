@@ -321,8 +321,12 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BinaryExpr& node) {
         dynamic_cast<IntegerLiteralTypeNode*>(right_type.get());
     auto* left_int_type = dynamic_cast<IntegerTypeNode*>(left_type.get());
     auto* right_int_type = dynamic_cast<IntegerTypeNode*>(right_type.get());
-
-    if (left_int_literal && right_int_type) {
+    if (left_int_literal && right_int_literal) {
+      // Both are literals - treat as compatible and return i32 type
+      types_compatible = true;
+      result_type =
+          std::make_unique<IntegerTypeNode>(node.op.location, 32, true);
+    } else if (left_int_literal && right_int_type) {
       // Left is literal, right is concrete type - use right type
       types_compatible = true;
       result_type = right_type->accept(*this);
@@ -426,8 +430,8 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(WhileStmtNode& node) {
   return nullptr;
 }
 
-std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionCallExpr& node) {
-  // For now, we only support the built-in "print" function
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(
+    FunctionCallExpr& node) {  // Check for built-in functions first
   if (node.function_name == "print") {
     // Print function expects exactly one argument
     if (node.arguments.size() != 1) {
@@ -443,9 +447,53 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionCallExpr& node) {
 
     // print function returns void (no return value)
     return nullptr;
-  } else {
+  }
+
+  // Check for user-defined functions
+  const FunctionInfo* func_info = symbols.lookupFunction(node.function_name);
+  if (!func_info) {
     error(node.location, "Unknown function: " + node.function_name);
     return nullptr;
+  }
+
+  // Check argument count
+  if (node.arguments.size() != func_info->parameter_types.size()) {
+    error(node.location, "Function '" + node.function_name + "' expects " +
+                             std::to_string(func_info->parameter_types.size()) +
+                             " arguments, got " +
+                             std::to_string(node.arguments.size()));
+    return nullptr;
+  }
+
+  // Check argument types
+  for (size_t i = 0; i < node.arguments.size(); ++i) {
+    if (!node.arguments[i]) continue;
+
+    std::unique_ptr<TypeNode> arg_type = node.arguments[i]->accept(*this);
+    if (!arg_type) return nullptr;
+
+    // Check if argument type matches parameter type
+    if (!arg_type->isEqualTo(func_info->parameter_types[i].get())) {
+      // Allow integer literal to integer type compatibility
+      auto* arg_literal = dynamic_cast<IntegerLiteralTypeNode*>(arg_type.get());
+      auto* param_int =
+          dynamic_cast<IntegerTypeNode*>(func_info->parameter_types[i].get());
+
+      if (!(arg_literal && param_int)) {
+        error(node.location, "Argument " + std::to_string(i + 1) +
+                                 " type mismatch. Expected '" +
+                                 func_info->parameter_types[i]->getTypeName() +
+                                 "', got '" + arg_type->getTypeName() + "'");
+        return nullptr;
+      }
+    }
+  }
+
+  // Return the function's return type
+  if (func_info->return_type) {
+    return func_info->return_type->accept(*this);
+  } else {
+    return nullptr;  // void function
   }
 }
 

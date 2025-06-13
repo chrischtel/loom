@@ -41,7 +41,9 @@ std::unique_ptr<ExprNode> Parser::parseEquality() {
 
 std::unique_ptr<ExprNode> Parser::parseComparison() {
   std::unique_ptr<ExprNode> expr = parseTerm();
-  while (match(TokenType::TOKEN_LESS) || match(TokenType::TOKEN_GREATER)) {
+  while (match(TokenType::TOKEN_LESS) || match(TokenType::TOKEN_GREATER) ||
+         match(TokenType::TOKEN_LESS_EQUAL) ||
+         match(TokenType::TOKEN_GREATER_EQUAL)) {
     const LoomToken& op = previous();
     std::unique_ptr<ExprNode> right = parseTerm();
     expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));

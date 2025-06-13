@@ -228,9 +228,11 @@ LoomToken Scanner::scanNextToken() {
       return (makeToken(match('=') ? TokenType::TOKEN_EQUAL_EQUAL
                                    : TokenType::TOKEN_EQUAL));
     case '<':
-      return makeToken(TokenType::TOKEN_LESS);
+      return makeToken(match('=') ? TokenType::TOKEN_LESS_EQUAL
+                                  : TokenType::TOKEN_LESS);
     case '>':
-      return makeToken(TokenType::TOKEN_GREATER);
+      return makeToken(match('=') ? TokenType::TOKEN_GREATER_EQUAL
+                                  : TokenType::TOKEN_GREATER);
     case ';':
       return makeToken(TokenType::TOKEN_SEMICOLON);
     case ':':
@@ -323,8 +325,12 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_EQUAL_EQUAL";
     case TokenType::TOKEN_LESS:
       return "TOKEN_LESS";
+    case TokenType::TOKEN_LESS_EQUAL:
+      return "TOKEN_LESS_EQUAL";
     case TokenType::TOKEN_GREATER:
       return "TOKEN_GREATER";
+    case TokenType::TOKEN_GREATER_EQUAL:
+      return "TOKEN_GREATER_EQUAL";
     case TokenType::TOKEN_SLASH:
       return "TOKEN_SLASH";
     case TokenType::TOKEN_PLUS:

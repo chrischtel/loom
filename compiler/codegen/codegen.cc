@@ -16,32 +16,33 @@ CodeGen::CodeGen() {
   context = std::make_unique<llvm::LLVMContext>();
   module = std::make_unique<llvm::Module>("MyLoomModule", *context);
   builder = std::make_unique<llvm::IRBuilder<>>(*context);
+  current_function = nullptr;  // Initialize current function context
 }
 
 void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
   std::cout << "[CodeGen] Starting code generation..." << std::endl;
 
-  // 1. Erstelle die 'main'-Funktion. In C-artigen Sprachen ist der
-  //    Einstiegspunkt 'int main()'.
-  //    Funktionstyp: int32 ()
-  llvm::FunctionType* funcType =
-      llvm::FunctionType::get(builder->getInt32Ty(), /*isVarArg=*/false);
+  // 1. Check if there's a main function in the AST
+  bool has_main_function = false;
+  for (const auto& stmt : ast) {
+    if (auto* func_decl = dynamic_cast<FunctionDeclNode*>(stmt.get())) {
+      if (func_decl->name == "main") {
+        has_main_function = true;
+        break;
+      }
+    }
+  }
 
-  //    Erstelle die Funktion im Modul
-  llvm::Function* mainFunc = llvm::Function::Create(
-      funcType, llvm::Function::ExternalLinkage, "main", module.get());
+  // 2. Error if no main function found
+  if (!has_main_function) {
+    throw std::runtime_error(
+        "Error: No 'main' function found in program. Every Loom program must "
+        "have a main function.");
+  }
 
-  std::cout << "[CodeGen] Created main function" << std::endl;
+  std::cout << "[CodeGen] Found main function in AST" << std::endl;
 
-  // 2. Erstelle den Einstiegs-Block für die Funktion.
-  //    Hier wird der Code platziert.
-  llvm::BasicBlock* entryBlock =
-      llvm::BasicBlock::Create(*context, "entry", mainFunc);
-  builder->SetInsertPoint(entryBlock);
-
-  std::cout << "[CodeGen] Created entry block" << std::endl;
-
-  // 3. Generiere den Code für jedes Statement im AST.
+  // 3. Generate code for all statements (including main function)
   std::cout << "[CodeGen] Processing " << ast.size() << " statements..."
             << std::endl;
 
@@ -61,13 +62,11 @@ void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
     throw;  // Re-throw the exception
   }
 
-  // 4. Füge am Ende der 'main' ein 'return 0;' ein.
-  builder->CreateRet(builder->getInt32(0));
-  std::cout << "[CodeGen] Added return statement" << std::endl;
-
-  // 5. Überprüfe die Funktion auf Konsistenz (sehr empfohlen!)
+  // 4. Verify all functions in the module
   std::cout << "[CodeGen] Verifying function..." << std::endl;
-  llvm::verifyFunction(*mainFunc);
+  for (auto& function : *module) {
+    llvm::verifyFunction(function);
+  }
   std::cout << "[CodeGen] Function verification completed" << std::endl;
 
   std::cout << "[CodeGen] Code generation completed successfully!" << std::endl;
@@ -224,6 +223,14 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
   }
   if (auto* n = dynamic_cast<FunctionCallExpr*>(&node)) {
     std::cout << "[CodeGen] Processing FunctionCallExpr" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<FunctionDeclNode*>(&node)) {
+    std::cout << "[CodeGen] Processing FunctionDeclNode" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<ReturnStmtNode*>(&node)) {
+    std::cout << "[CodeGen] Processing ReturnStmtNode" << std::endl;
     return codegen(*n);
   }
   if (auto* n = dynamic_cast<BinaryExpr*>(&node)) {
@@ -404,8 +411,12 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
         return builder->CreateFCmpOEQ(L, R, "fcmp.tmp");
       case TokenType::TOKEN_LESS:
         return builder->CreateFCmpOLT(L, R, "fcmp.tmp");
+      case TokenType::TOKEN_LESS_EQUAL:
+        return builder->CreateFCmpOLE(L, R, "fcmp.tmp");
       case TokenType::TOKEN_GREATER:
         return builder->CreateFCmpOGT(L, R, "fcmp.tmp");
+      case TokenType::TOKEN_GREATER_EQUAL:
+        return builder->CreateFCmpOGE(L, R, "fcmp.tmp");
       default:
         throw std::runtime_error("CodeGen: Unknown binary operator for float.");
     }
@@ -424,8 +435,12 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
         return builder->CreateICmpEQ(L, R, "icmp.tmp");
       case TokenType::TOKEN_LESS:
         return builder->CreateICmpSLT(L, R, "icmp.tmp");
+      case TokenType::TOKEN_LESS_EQUAL:
+        return builder->CreateICmpSLE(L, R, "icmp.tmp");
       case TokenType::TOKEN_GREATER:
         return builder->CreateICmpSGT(L, R, "icmp.tmp");
+      case TokenType::TOKEN_GREATER_EQUAL:
+        return builder->CreateICmpSGE(L, R, "icmp.tmp");
       default:
         throw std::runtime_error(
             "CodeGen: Unknown binary operator for integer.");
@@ -575,6 +590,7 @@ llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {
   std::cout << "[CodeGen] Generating FunctionCallExpr: " << node.function_name
             << std::endl;
 
+  // Handle built-in functions
   if (node.function_name == "print") {
     // Declare printf if not already declared
     llvm::Function* printf_func = module->getFunction("printf");
@@ -626,7 +642,40 @@ llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {
     return builder->CreateCall(printf_func, {format_str, arg}, "printf.call");
   }
 
-  throw std::runtime_error("Unknown function: " + node.function_name);
+  // Handle user-defined functions
+  llvm::Function* target_func = module->getFunction(node.function_name);
+  if (!target_func) {
+    std::cout << "[CodeGen] ERROR: Function '" << node.function_name
+              << "' not found in module" << std::endl;
+    throw std::runtime_error("Function not found: " + node.function_name);
+  }
+
+  // Generate arguments
+  std::vector<llvm::Value*> args;
+  for (auto& arg_node : node.arguments) {
+    llvm::Value* arg_value = codegen(*arg_node);
+    if (!arg_value) {
+      std::cout
+          << "[CodeGen] ERROR: Failed to generate argument for function call"
+          << std::endl;
+      return nullptr;
+    }
+    args.push_back(arg_value);
+  }
+
+  // Verify argument count matches function signature
+  if (args.size() != target_func->arg_size()) {
+    std::cout << "[CodeGen] ERROR: Argument count mismatch. Expected "
+              << target_func->arg_size() << ", got " << args.size()
+              << std::endl;
+    throw std::runtime_error("Argument count mismatch for function: " +
+                             node.function_name);
+  }
+
+  // Create function call
+  std::cout << "[CodeGen] Creating call to function: " << node.function_name
+            << " with " << args.size() << " arguments" << std::endl;
+  return builder->CreateCall(target_func, args, node.function_name + ".call");
 }
 
 // --- Integrated Compilation Methods (like Kaleidoscope) ---
@@ -721,5 +770,151 @@ bool CodeGen::compileToExecutable(const std::string& objectFilename,
     std::cerr << "[CodeGen] Linking failed with exit code: " << result
               << std::endl;
     return false;
+  }
+}
+
+// --- Function Declaration Codegen ---
+llvm::Value* CodeGen::codegen(FunctionDeclNode& node) {
+  std::cout << "[CodeGen] Generating function: " << node.name << std::endl;
+
+  // 1. Convert parameter types to LLVM types
+  std::vector<llvm::Type*> param_types;
+  for (auto& param : node.parameters) {
+    llvm::Type* llvm_type = typeToLLVMType(*param->type);
+    if (!llvm_type) {
+      std::cout << "[CodeGen] ERROR: Failed to convert parameter type"
+                << std::endl;
+      return nullptr;
+    }
+    param_types.push_back(llvm_type);
+  }
+
+  // 2. Convert return type to LLVM type (default to void if null)
+  llvm::Type* return_type = builder->getVoidTy();  // Default: void
+  if (node.return_type) {
+    return_type = typeToLLVMType(*node.return_type);
+    if (!return_type) {
+      std::cout << "[CodeGen] ERROR: Failed to convert return type"
+                << std::endl;
+      return nullptr;
+    }
+  }
+
+  // 3. Create function type
+  llvm::FunctionType* func_type =
+      llvm::FunctionType::get(return_type, param_types, false);
+
+  // 4. Create function
+  llvm::Function* llvm_func = llvm::Function::Create(
+      func_type, llvm::Function::ExternalLinkage, node.name, module.get());
+
+  if (!llvm_func) {
+    std::cout << "[CodeGen] ERROR: Failed to create function" << std::endl;
+    return nullptr;
+  }
+
+  // 5. Set parameter names
+  auto arg_it = llvm_func->arg_begin();
+  for (size_t i = 0; i < node.parameters.size(); ++i, ++arg_it) {
+    arg_it->setName(node.parameters[i]->name);
+  }
+
+  // 6. Create entry block
+  llvm::BasicBlock* entry_block =
+      llvm::BasicBlock::Create(*context, "entry", llvm_func);
+
+  // Save current insertion point and function context
+  llvm::BasicBlock* prev_block = builder->GetInsertBlock();
+  llvm::Function* prev_function = current_function;
+
+  // Switch to function context
+  builder->SetInsertPoint(entry_block);
+  current_function = llvm_func;
+
+  // Save previous named values (for nested scopes)
+  auto prev_named_values = named_values;
+  auto prev_variable_types = variable_types;
+
+  // 7. Add parameters to symbol table
+  arg_it = llvm_func->arg_begin();
+  for (size_t i = 0; i < node.parameters.size(); ++i, ++arg_it) {
+    // Create alloca for parameter (for mutable parameters)
+    llvm::Type* param_type = typeToLLVMType(*node.parameters[i]->type);
+    llvm::AllocaInst* alloca =
+        builder->CreateAlloca(param_type, nullptr, node.parameters[i]->name);
+
+    // Store parameter value in alloca
+    builder->CreateStore(&*arg_it, alloca);
+
+    // Add to symbol table
+    named_values[node.parameters[i]->name] = alloca;
+    variable_types[node.parameters[i]->name] = param_type;
+  }
+
+  // 8. Generate function body
+  for (auto& stmt : node.body) {
+    if (stmt) {
+      codegen(*stmt);
+    }
+  }
+
+  // 9. Add default return if needed
+  if (return_type->isVoidTy()) {
+    // Void function - add return void if no return statement at end
+    if (builder->GetInsertBlock()->getTerminator() == nullptr) {
+      builder->CreateRetVoid();
+    }
+  } else {
+    // Non-void function - should have return statement
+    if (builder->GetInsertBlock()->getTerminator() == nullptr) {
+      std::cout
+          << "[CodeGen] WARNING: Non-void function without return statement"
+          << std::endl;
+      // Add default return (could be improved)
+      if (return_type->isIntegerTy()) {
+        builder->CreateRet(llvm::ConstantInt::get(return_type, 0));
+      } else if (return_type->isFloatingPointTy()) {
+        builder->CreateRet(llvm::ConstantFP::get(return_type, 0.0));
+      }
+    }
+  }
+
+  // 10. Restore previous context
+  current_function = prev_function;
+  named_values = prev_named_values;
+  variable_types = prev_variable_types;
+
+  if (prev_block) {
+    builder->SetInsertPoint(prev_block);
+  }
+
+  std::cout << "[CodeGen] Function generation complete: " << node.name
+            << std::endl;
+  return llvm_func;
+}
+
+// --- Return Statement Codegen ---
+llvm::Value* CodeGen::codegen(ReturnStmtNode& node) {
+  std::cout << "[CodeGen] Generating return statement" << std::endl;
+
+  if (!current_function) {
+    std::cout << "[CodeGen] ERROR: Return statement outside function"
+              << std::endl;
+    return nullptr;
+  }
+
+  if (node.expression) {
+    // Return with value
+    llvm::Value* return_value = codegen(*node.expression);
+    if (!return_value) {
+      std::cout << "[CodeGen] ERROR: Failed to generate return expression"
+                << std::endl;
+      return nullptr;
+    }
+
+    return builder->CreateRet(return_value);
+  } else {
+    // Return void
+    return builder->CreateRetVoid();
   }
 }

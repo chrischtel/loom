@@ -31,6 +31,9 @@ class WhileStmtNode;
 class ExprStmtNode;
 class AssignmentExpr;
 class FunctionCallExpr;
+class FunctionDeclNode;
+class ParameterNode;
+class ReturnStmtNode;
 class TypeNode;
 class IntegerLiteralTypeNode;
 class FloatLiteralTypeNode;
@@ -61,10 +64,10 @@ class CodeGen {
  private:
   std::unique_ptr<llvm::LLVMContext> context;
   std::unique_ptr<llvm::IRBuilder<>> builder;
-
   std::map<std::string, llvm::Value*> named_values;
   std::map<std::string, llvm::Type*>
-      variable_types;  // Track types for opaque pointers
+      variable_types;                // Track types for opaque pointers
+  llvm::Function* current_function;  // For return statement handling
   // Dispatch-Methoden (unverändert)
   llvm::Value* codegen(ASTNode& node);
   llvm::Value* codegen(NumberLiteral& node);
@@ -75,6 +78,8 @@ class CodeGen {
   llvm::Value* codegen(ExprStmtNode& node);
   llvm::Value* codegen(AssignmentExpr& node);
   llvm::Value* codegen(FunctionCallExpr& node);
+  llvm::Value* codegen(FunctionDeclNode& node);
+  llvm::Value* codegen(ReturnStmtNode& node);
   llvm::Value* codegen(BinaryExpr& node);
   llvm::Value* codegen(Identifier& node);
 
