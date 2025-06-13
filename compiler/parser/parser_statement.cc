@@ -140,8 +140,7 @@ std::unique_ptr<StmtNode> Parser::parseFunctionDeclaration() {
 
   // Return type (optional, default to void)
   std::unique_ptr<TypeNode> return_type = nullptr;
-  if (match(TokenType::TOKEN_MINUS)) {
-    consume(TokenType::TOKEN_GREATER, "Expected '>' after '-' in return type.");
+  if (!check(TokenType::TOKEN_LEFT_BRACE)) {
     return_type = parseType();
   }
 
