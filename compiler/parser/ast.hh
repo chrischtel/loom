@@ -28,11 +28,25 @@ class IntegerTypeNode;
 class FloatTypeNode;
 class BooleanTypeNode;
 class StringTypeNode;
+class NullTypeNode;
 class IntegerLiteralTypeNode;
 class FloatLiteralTypeNode;
 class FunctionDeclNode;
 class ParameterNode;
 class ReturnStmtNode;
+
+// Memory model nodes
+class ReferenceTypeNode;
+class OwnedPointerTypeNode;
+class NullableTypeNode;
+class SliceTypeNode;
+class ReferenceExpr;
+class DereferenceExpr;
+class MemberAccessExpr;
+class PointerAccessExpr;
+class SliceExpr;
+class DeferStmtNode;
+class UnsafeBlockExpr;
 class ASTVisitor {
  public:
   virtual ~ASTVisitor() = default;
@@ -57,8 +71,22 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(FloatTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(BooleanTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(StringTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(NullTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IntegerLiteralTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FloatLiteralTypeNode& node) = 0;
+
+  // Memory model visitors
+  virtual std::unique_ptr<TypeNode> visit(ReferenceTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(OwnedPointerTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(NullableTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(SliceTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(ReferenceExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(DereferenceExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(MemberAccessExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(PointerAccessExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(SliceExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(DeferStmtNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(UnsafeBlockExpr& node) = 0;
 };
 
 // Basisklasse
@@ -215,6 +243,28 @@ class StringTypeNode : public TypeNode {
   }
 };
 
+// Null type - represents the type of null literals
+class NullTypeNode : public TypeNode {
+ public:
+  NullTypeNode(const LoomSourceLocation& loc) : TypeNode(loc) {}
+
+  std::string toString() const override { return "null"; }
+
+  std::string getTypeName() const override { return "null"; }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    return dynamic_cast<const NullTypeNode*>(other) != nullptr;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
 // Special type for integer literals that can be converted to appropriate types
 class IntegerLiteralTypeNode : public TypeNode {
  public:
@@ -302,12 +352,144 @@ class FloatLiteralTypeNode : public TypeNode {
   bool canAcceptFrom(const TypeNode* other) const override {
     return isEqualTo(other);
   }
-
   // Check if this literal can fit into a specific float type
   bool canFitInto(const FloatTypeNode* target) const {
     // For simplicity, assume all float literals can fit into f32 and f64
     // f16 might have range issues, but we'll be permissive for now
     return target->bit_width >= 16;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Memory model type nodes
+
+// Reference type: &T
+class ReferenceTypeNode : public TypeNode {
+ public:
+  std::unique_ptr<TypeNode> referenced_type;
+
+  ReferenceTypeNode(const LoomSourceLocation& loc,
+                    std::unique_ptr<TypeNode> type)
+      : TypeNode(loc), referenced_type(std::move(type)) {}
+
+  std::string toString() const override {
+    return "&" + referenced_type->toString();
+  }
+
+  std::string getTypeName() const override {
+    return "ref_" + referenced_type->getTypeName();
+  }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_ref = dynamic_cast<const ReferenceTypeNode*>(other)) {
+      return referenced_type->isEqualTo(other_ref->referenced_type.get());
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Owned pointer type: ^T
+class OwnedPointerTypeNode : public TypeNode {
+ public:
+  std::unique_ptr<TypeNode> pointed_type;
+
+  OwnedPointerTypeNode(const LoomSourceLocation& loc,
+                       std::unique_ptr<TypeNode> type)
+      : TypeNode(loc), pointed_type(std::move(type)) {}
+
+  std::string toString() const override {
+    return "^" + pointed_type->toString();
+  }
+
+  std::string getTypeName() const override {
+    return "owned_" + pointed_type->getTypeName();
+  }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_owned = dynamic_cast<const OwnedPointerTypeNode*>(other)) {
+      return pointed_type->isEqualTo(other_owned->pointed_type.get());
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Nullable type: T?
+class NullableTypeNode : public TypeNode {
+ public:
+  std::unique_ptr<TypeNode> inner_type;
+
+  NullableTypeNode(const LoomSourceLocation& loc,
+                   std::unique_ptr<TypeNode> type)
+      : TypeNode(loc), inner_type(std::move(type)) {}
+
+  std::string toString() const override { return inner_type->toString() + "?"; }
+
+  std::string getTypeName() const override {
+    return "nullable_" + inner_type->getTypeName();
+  }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_nullable = dynamic_cast<const NullableTypeNode*>(other)) {
+      return inner_type->isEqualTo(other_nullable->inner_type.get());
+    }
+    return false;
+  }
+  bool canAcceptFrom(const TypeNode* other) const override {
+    // Nullable types can accept their inner type, other nullable of same type,
+    // or null
+    return isEqualTo(other) || inner_type->isEqualTo(other) ||
+           dynamic_cast<const NullTypeNode*>(other) != nullptr;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Slice type: []T
+class SliceTypeNode : public TypeNode {
+ public:
+  std::unique_ptr<TypeNode> element_type;
+
+  SliceTypeNode(const LoomSourceLocation& loc, std::unique_ptr<TypeNode> type)
+      : TypeNode(loc), element_type(std::move(type)) {}
+
+  std::string toString() const override {
+    return "[]" + element_type->toString();
+  }
+
+  std::string getTypeName() const override {
+    return "slice_" + element_type->getTypeName();
+  }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_slice = dynamic_cast<const SliceTypeNode*>(other)) {
+      return element_type->isEqualTo(other_slice->element_type.get());
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
   }
 
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
@@ -591,6 +773,24 @@ class WhileStmtNode : public StmtNode {
   }
 };
 
+// Defer statement: defer statement
+class DeferStmtNode : public StmtNode {
+ public:
+  std::unique_ptr<StmtNode> deferred_statement;
+
+  DeferStmtNode(const LoomSourceLocation& loc, std::unique_ptr<StmtNode> stmt)
+      : StmtNode(loc), deferred_statement(std::move(stmt)) {}
+
+  std::string toString() const override {
+    return "defer " +
+           (deferred_statement ? deferred_statement->toString() : "null");
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
 // FunctionCallExpr for print() calls
 class FunctionCallExpr : public ExprNode {
  public:
@@ -633,6 +833,132 @@ class BuiltinCallExpr : public ExprNode {
       result += arguments[i] ? arguments[i]->toString() : "null";
     }
     result += "))";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Memory model expression nodes
+
+// Reference expression: &expr
+class ReferenceExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> operand;
+
+  ReferenceExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> expr)
+      : ExprNode(loc), operand(std::move(expr)) {}
+
+  std::string toString() const override {
+    return "&(" + (operand ? operand->toString() : "null") + ")";
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Dereference expression: *expr or ^expr
+class DereferenceExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> operand;
+  TokenType deref_type;  // TOKEN_STAR for *, TOKEN_HAT for ^
+
+  DereferenceExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> expr,
+                  TokenType type)
+      : ExprNode(loc), operand(std::move(expr)), deref_type(type) {}
+
+  std::string toString() const override {
+    std::string op = (deref_type == TokenType::TOKEN_STAR) ? "*" : "^";
+    return op + "(" + (operand ? operand->toString() : "null") + ")";
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Member access expression: expr.field
+class MemberAccessExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> object;
+  std::string member_name;
+
+  MemberAccessExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> obj,
+                   const std::string& member)
+      : ExprNode(loc), object(std::move(obj)), member_name(member) {}
+
+  std::string toString() const override {
+    return (object ? object->toString() : "null") + "." + member_name;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Pointer access expression: expr->field
+class PointerAccessExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> pointer;
+  std::string member_name;
+
+  PointerAccessExpr(const LoomSourceLocation& loc,
+                    std::unique_ptr<ExprNode> ptr, const std::string& member)
+      : ExprNode(loc), pointer(std::move(ptr)), member_name(member) {}
+
+  std::string toString() const override {
+    return (pointer ? pointer->toString() : "null") + "->" + member_name;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Slice expression: expr[start..end]
+class SliceExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> array;
+  std::unique_ptr<ExprNode> start;
+  std::unique_ptr<ExprNode> end;
+
+  SliceExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> arr,
+            std::unique_ptr<ExprNode> s, std::unique_ptr<ExprNode> e)
+      : ExprNode(loc),
+        array(std::move(arr)),
+        start(std::move(s)),
+        end(std::move(e)) {}
+
+  std::string toString() const override {
+    return (array ? array->toString() : "null") + "[" +
+           (start ? start->toString() : "") + ".." +
+           (end ? end->toString() : "") + "]";
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Unsafe block expression: unsafe { ... }
+class UnsafeBlockExpr : public ExprNode {
+ public:
+  std::vector<std::unique_ptr<StmtNode>> statements;
+
+  UnsafeBlockExpr(const LoomSourceLocation& loc,
+                  std::vector<std::unique_ptr<StmtNode>> stmts)
+      : ExprNode(loc), statements(std::move(stmts)) {}
+
+  std::string toString() const override {
+    std::string result = "unsafe { ";
+    for (const auto& stmt : statements) {
+      result += stmt ? stmt->toString() : "null";
+      result += "; ";
+    }
+    result += "}";
     return result;
   }
 

@@ -23,6 +23,8 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
     if (match(TokenType::TOKEN_KEYWORD_IF)) return parseIfStatement();
     if (match(TokenType::TOKEN_KEYWORD_WHILE)) return parseWhileStatement();
     if (match(TokenType::TOKEN_KEYWORD_RETURN)) return parseReturnStatement();
+    if (match(TokenType::TOKEN_KEYWORD_DEFER)) return parseDeferStatement();
+    if (match(TokenType::TOKEN_KEYWORD_UNSAFE)) return parseUnsafeBlock();
 
     return parseExpressionStatement();
   } catch (const ParseError&) {
@@ -187,4 +189,39 @@ std::unique_ptr<ParameterNode> Parser::parseParameter() {
 
   return std::make_unique<ParameterNode>(param_loc, param_name,
                                          std::move(param_type));
+}
+
+// Parse defer statement: defer statement
+std::unique_ptr<StmtNode> Parser::parseDeferStatement() {
+  LoomSourceLocation defer_loc = previous().location;
+
+  // Parse the statement to be deferred
+  std::unique_ptr<StmtNode> deferred_stmt = parseExpressionStatement();
+
+  return std::make_unique<DeferStmtNode>(defer_loc, std::move(deferred_stmt));
+}
+
+// Parse unsafe block: unsafe { statements }
+std::unique_ptr<StmtNode> Parser::parseUnsafeBlock() {
+  LoomSourceLocation unsafe_loc = previous().location;
+
+  consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after 'unsafe'");
+
+  std::vector<std::unique_ptr<StmtNode>> statements;
+
+  // Parse statements until we hit the closing brace
+  while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+    auto stmt = parseDeclaration();
+    if (stmt) {
+      statements.push_back(std::move(stmt));
+    }
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after unsafe block");
+
+  // For now, wrap it as an expression statement containing an unsafe block
+  // expression
+  auto unsafe_expr =
+      std::make_unique<UnsafeBlockExpr>(unsafe_loc, std::move(statements));
+  return std::make_unique<ExprStmtNode>(unsafe_loc, std::move(unsafe_expr));
 }

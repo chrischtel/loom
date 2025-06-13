@@ -46,16 +46,19 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
     node.type->accept(*this);
   }
   // Schritt 3: Führe die Typ-Prüfung durch.
-  if (node.type && initializer_type) {
-    // Fall A: Typ ist deklariert UND es gibt einen Initializer.
-    // Check for intelligent literal conversion
+  if (node.type && initializer_type) {  // Fall A: Typ ist deklariert UND es
+                                        // gibt einen Initializer.
+    // Check for memory model type compatibility
     bool types_compatible = false;
 
     if (node.type->isEqualTo(initializer_type.get())) {
       // Types are exactly equal
       types_compatible = true;
+    } else if (node.type->canAcceptFrom(initializer_type.get())) {
+      // Use the new canAcceptFrom method for memory model compatibility
+      types_compatible = true;
     } else {
-      // Check for literal conversion
+      // Check for literal conversion (legacy compatibility)
       if (auto int_literal = dynamic_cast<const IntegerLiteralTypeNode*>(
               initializer_type.get())) {
         if (auto target_int =
@@ -199,6 +202,11 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StringLiteral& node) {
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(Identifier& node) {
+  // Handle special null literal
+  if (node.name == "null") {
+    return std::make_unique<NullTypeNode>(node.location);
+  }
+
   const SymbolInfo* info = symbols.lookup(node.name);
   if (info == nullptr) {
     error(node.location, "Undeclared identifier '" + node.name + "'.");
@@ -373,6 +381,11 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BooleanTypeNode& node) {
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StringTypeNode& node) {
   // Create a copy of the string type
   return std::make_unique<StringTypeNode>(node.location);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(NullTypeNode& node) {
+  // Create a copy of the null type
+  return std::make_unique<NullTypeNode>(node.location);
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(
@@ -616,5 +629,269 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ReturnStmtNode& node) {
     return node.expression->accept(*this);
   }
   // Return statements don't have types themselves
+  return nullptr;
+}
+
+// Memory model visitor implementations
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ReferenceTypeNode& node) {
+  // Analyze the referenced type
+  if (node.referenced_type) {
+    node.referenced_type->accept(*this);
+  }
+  // References are always valid at compile time
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(OwnedPointerTypeNode& node) {
+  // Analyze the pointed type
+  if (node.pointed_type) {
+    node.pointed_type->accept(*this);
+  }
+  // Owned pointers are always valid at compile time
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(NullableTypeNode& node) {
+  // Analyze the inner type first
+  if (!node.inner_type) {
+    error(node.location, "Nullable type node missing inner type");
+    return nullptr;
+  }
+
+  auto inner_type = node.inner_type->accept(*this);
+  if (!inner_type) {
+    error(node.location, "Cannot determine inner type for nullable");
+    return nullptr;
+  }
+
+  // Return a copy of the nullable type with the validated inner type
+  auto cloned_inner = cloneType(inner_type.get());
+  if (!cloned_inner) {
+    error(node.location, "Cannot clone inner type for nullable");
+    return nullptr;
+  }
+
+  return std::make_unique<NullableTypeNode>(node.location,
+                                            std::move(cloned_inner));
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(SliceTypeNode& node) {
+  // Analyze the element type
+  if (node.element_type) {
+    node.element_type->accept(*this);
+  }
+  // Slice types are always valid at compile time
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ReferenceExpr& node) {
+  // Taking a reference of an expression
+  if (!node.operand) {
+    error(node.location, "Reference expression missing operand");
+    return nullptr;
+  }
+
+  auto operand_type = node.operand->accept(*this);
+  if (!operand_type) {
+    error(node.location, "Cannot determine type of reference operand");
+    return nullptr;
+  }
+
+  // Create a reference type from the operand type
+  return std::make_unique<ReferenceTypeNode>(node.location,
+                                             std::move(operand_type));
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(DereferenceExpr& node) {
+  // Dereferencing a pointer or reference
+  if (!node.operand) {
+    error(node.location, "Dereference expression missing operand");
+    return nullptr;
+  }
+
+  auto operand_type = node.operand->accept(*this);
+  if (!operand_type) {
+    error(node.location, "Cannot determine type of dereference operand");
+    return nullptr;
+  }
+  // Check if operand is a reference or owned pointer
+  if (auto ref_type = dynamic_cast<ReferenceTypeNode*>(operand_type.get())) {
+    // Return a copy of the referenced type - we need to clone it properly
+    auto referenced = ref_type->referenced_type.get();
+    if (auto int_type = dynamic_cast<IntegerTypeNode*>(referenced)) {
+      return std::make_unique<IntegerTypeNode>(
+          int_type->location, int_type->bit_width, int_type->is_signed);
+    } else if (auto float_type = dynamic_cast<FloatTypeNode*>(referenced)) {
+      return std::make_unique<FloatTypeNode>(float_type->location,
+                                             float_type->bit_width);
+    } else if (auto bool_type = dynamic_cast<BooleanTypeNode*>(referenced)) {
+      return std::make_unique<BooleanTypeNode>(bool_type->location);
+    } else if (auto string_type = dynamic_cast<StringTypeNode*>(referenced)) {
+      return std::make_unique<StringTypeNode>(string_type->location);
+    }
+    // Add more type cloning as needed
+    error(node.location, "Cannot dereference reference to unknown type");
+    return nullptr;
+  } else if (auto owned_type =
+                 dynamic_cast<OwnedPointerTypeNode*>(operand_type.get())) {
+    // Return a copy of the pointed type - we need to clone it properly
+    auto pointed = owned_type->pointed_type.get();
+    if (auto int_type = dynamic_cast<IntegerTypeNode*>(pointed)) {
+      return std::make_unique<IntegerTypeNode>(
+          int_type->location, int_type->bit_width, int_type->is_signed);
+    } else if (auto float_type = dynamic_cast<FloatTypeNode*>(pointed)) {
+      return std::make_unique<FloatTypeNode>(float_type->location,
+                                             float_type->bit_width);
+    } else if (auto bool_type = dynamic_cast<BooleanTypeNode*>(pointed)) {
+      return std::make_unique<BooleanTypeNode>(bool_type->location);
+    } else if (auto string_type = dynamic_cast<StringTypeNode*>(pointed)) {
+      return std::make_unique<StringTypeNode>(string_type->location);
+    }  // Add more type cloning as needed
+    error(node.location, "Cannot dereference owned pointer to unknown type");
+    return nullptr;
+  } else if (dynamic_cast<NullableTypeNode*>(operand_type.get())) {
+    // Cannot directly dereference nullable - need null check first
+    error(node.location,
+          "Cannot dereference nullable type '" + operand_type->getTypeName() +
+              "' without null check. Use pattern matching or explicit checks.");
+    return nullptr;
+  } else {
+    error(node.location, "Cannot dereference non-pointer type '" +
+                             operand_type->getTypeName() +
+                             "'. Only references (&T) and owned pointers (^T) "
+                             "can be dereferenced.");
+    return nullptr;
+  }
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(MemberAccessExpr& node) {
+  // Member access: obj.field
+  if (!node.object) {
+    error(node.location, "Member access expression missing object");
+    return nullptr;
+  }
+
+  auto object_type = node.object->accept(*this);
+  if (!object_type) {
+    error(node.location, "Cannot determine type of object for member access");
+    return nullptr;
+  }
+
+  // TODO: Implement struct/object type checking and member lookup
+  error(node.location, "Member access not yet implemented for type: " +
+                           object_type->getTypeName());
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(PointerAccessExpr& node) {
+  // Pointer access: ptr->field
+  if (!node.pointer) {
+    error(node.location, "Pointer access expression missing pointer");
+    return nullptr;
+  }
+
+  auto pointer_type = node.pointer->accept(*this);
+  if (!pointer_type) {
+    error(node.location, "Cannot determine type of pointer for member access");
+    return nullptr;
+  }
+
+  // TODO: Implement pointer member access checking
+  error(node.location, "Pointer access not yet implemented for type: " +
+                           pointer_type->getTypeName());
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(SliceExpr& node) {
+  // Slice expression: arr[start..end]
+  if (!node.array) {
+    error(node.location, "Slice expression missing array");
+    return nullptr;
+  }
+
+  auto array_type = node.array->accept(*this);
+  if (!array_type) {
+    error(node.location, "Cannot determine type of array for slicing");
+    return nullptr;
+  }
+
+  // Analyze start and end indices if present
+  if (node.start) {
+    auto start_type = node.start->accept(*this);
+    // TODO: Check that start is an integer type
+  }
+
+  if (node.end) {
+    auto end_type = node.end->accept(*this);
+    // TODO: Check that end is an integer type
+  }
+
+  // TODO: Implement proper slice type derivation from array type
+  error(node.location, "Slice expressions not yet fully implemented");
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(DeferStmtNode& node) {
+  // Defer statement: defer statement
+  if (!node.deferred_statement) {
+    error(node.location, "Defer statement missing deferred statement");
+    return nullptr;
+  }
+
+  // Analyze the deferred statement
+  node.deferred_statement->accept(*this);
+
+  // Defer statements don't have a type
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnsafeBlockExpr& node) {
+  // Unsafe block: unsafe { ... }
+  // Analyze all statements in the unsafe block
+  for (auto& stmt : node.statements) {
+    if (stmt) {
+      stmt->accept(*this);
+    }
+  }
+
+  // TODO: Implement proper return type for unsafe blocks
+  // For now, unsafe blocks don't return a specific type
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::cloneType(TypeNode* type) {
+  if (!type) return nullptr;
+
+  if (auto int_type = dynamic_cast<IntegerTypeNode*>(type)) {
+    return std::make_unique<IntegerTypeNode>(
+        int_type->location, int_type->bit_width, int_type->is_signed);
+  } else if (auto float_type = dynamic_cast<FloatTypeNode*>(type)) {
+    return std::make_unique<FloatTypeNode>(float_type->location,
+                                           float_type->bit_width);
+  } else if (auto bool_type = dynamic_cast<BooleanTypeNode*>(type)) {
+    return std::make_unique<BooleanTypeNode>(bool_type->location);
+  } else if (auto string_type = dynamic_cast<StringTypeNode*>(type)) {
+    return std::make_unique<StringTypeNode>(string_type->location);
+  } else if (auto null_type = dynamic_cast<NullTypeNode*>(type)) {
+    return std::make_unique<NullTypeNode>(null_type->location);
+  } else if (auto nullable_type = dynamic_cast<NullableTypeNode*>(type)) {
+    auto cloned_inner = cloneType(nullable_type->inner_type.get());
+    if (!cloned_inner) return nullptr;
+    return std::make_unique<NullableTypeNode>(nullable_type->location,
+                                              std::move(cloned_inner));
+  } else if (auto ref_type = dynamic_cast<ReferenceTypeNode*>(type)) {
+    auto cloned_ref = cloneType(ref_type->referenced_type.get());
+    if (!cloned_ref) return nullptr;
+    return std::make_unique<ReferenceTypeNode>(ref_type->location,
+                                               std::move(cloned_ref));
+  } else if (auto owned_type = dynamic_cast<OwnedPointerTypeNode*>(type)) {
+    auto cloned_pointed = cloneType(owned_type->pointed_type.get());
+    if (!cloned_pointed) return nullptr;
+    return std::make_unique<OwnedPointerTypeNode>(owned_type->location,
+                                                  std::move(cloned_pointed));
+  }
+
+  // Add more type cloning as needed for other type nodes
   return nullptr;
 }

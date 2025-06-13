@@ -26,7 +26,17 @@ enum class TokenType {
   TOKEN_RIGHT_PAREN,
   TOKEN_LEFT_BRACE,
   TOKEN_RIGHT_BRACE,
+  TOKEN_LEFT_BRACKET,   // [
+  TOKEN_RIGHT_BRACKET,  // ]
   TOKEN_BANG,
+
+  // Memory operators
+  TOKEN_AMPERSAND,  // & (reference)
+  TOKEN_HAT,        // ^ (owned pointer)
+  TOKEN_QUESTION,   // ? (nullable)
+  TOKEN_ARROW,      // -> (pointer access)
+  TOKEN_DOT,        // . (member access)
+  TOKEN_DOT_DOT,    // .. (slice range)
 
   // Literals
   TOKEN_NUMBER_INT,
@@ -47,6 +57,10 @@ enum class TokenType {
   TOKEN_KEYWORD_FALSE,
   TOKEN_KEYWORD_WHILE,
   TOKEN_KEYWORD_RETURN,
+  TOKEN_KEYWORD_DEFER,   // defer statement
+  TOKEN_KEYWORD_UNSAFE,  // unsafe block
+  TOKEN_KEYWORD_STATIC,  // static allocation
+  TOKEN_KEYWORD_NULL,    // null literal
 
   // Specials
   TOKEN_ERROR

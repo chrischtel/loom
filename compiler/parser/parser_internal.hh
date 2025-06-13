@@ -33,6 +33,8 @@ class Parser {
   std::unique_ptr<StmtNode> parseWhileStatement();
   std::unique_ptr<StmtNode> parseFunctionDeclaration();
   std::unique_ptr<StmtNode> parseReturnStatement();
+  std::unique_ptr<StmtNode> parseDeferStatement();
+  std::unique_ptr<StmtNode> parseUnsafeBlock();
   std::unique_ptr<ParameterNode> parseParameter();
   std::unique_ptr<StmtNode> parseExpressionStatement();
   std::unique_ptr<ExprNode> parseExpression();

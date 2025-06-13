@@ -13,6 +13,10 @@ static const std::unordered_map<std::string_view, TokenType> keywords = {
     {"false", TokenType::TOKEN_KEYWORD_FALSE},
     {"while", TokenType::TOKEN_KEYWORD_WHILE},
     {"return", TokenType::TOKEN_KEYWORD_RETURN},
+    {"defer", TokenType::TOKEN_KEYWORD_DEFER},
+    {"unsafe", TokenType::TOKEN_KEYWORD_UNSAFE},
+    {"static", TokenType::TOKEN_KEYWORD_STATIC},
+    {"null", TokenType::TOKEN_KEYWORD_NULL},
 };
 
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
@@ -255,9 +259,19 @@ LoomToken Scanner::scanNextToken() {
     case '+':
       return makeToken(TokenType::TOKEN_PLUS);
     case '-':
-      return makeToken(TokenType::TOKEN_MINUS);
+      return makeToken(match('>') ? TokenType::TOKEN_ARROW
+                                  : TokenType::TOKEN_MINUS);
     case '*':
       return makeToken(TokenType::TOKEN_STAR);
+    case '&':
+      return makeToken(TokenType::TOKEN_AMPERSAND);
+    case '^':
+      return makeToken(TokenType::TOKEN_HAT);
+    case '?':
+      return makeToken(TokenType::TOKEN_QUESTION);
+    case '.':
+      return makeToken(match('.') ? TokenType::TOKEN_DOT_DOT
+                                  : TokenType::TOKEN_DOT);
     case '(':
       return makeToken(TokenType::TOKEN_LEFT_PAREN);
     case '!':
@@ -268,6 +282,10 @@ LoomToken Scanner::scanNextToken() {
       return makeToken(TokenType::TOKEN_LEFT_BRACE);
     case '}':
       return makeToken(TokenType::TOKEN_RIGHT_BRACE);
+    case '[':
+      return makeToken(TokenType::TOKEN_LEFT_BRACKET);
+    case ']':
+      return makeToken(TokenType::TOKEN_RIGHT_BRACKET);
     case '"':
       if (peek() == '"' && peek_next() == '"') {
         return scanMultiLineComment();
@@ -336,6 +354,14 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_WHILE";
     case TokenType::TOKEN_KEYWORD_RETURN:
       return "TOKEN_KEYWORD_RETURN";
+    case TokenType::TOKEN_KEYWORD_DEFER:
+      return "TOKEN_KEYWORD_DEFER";
+    case TokenType::TOKEN_KEYWORD_UNSAFE:
+      return "TOKEN_KEYWORD_UNSAFE";
+    case TokenType::TOKEN_KEYWORD_STATIC:
+      return "TOKEN_KEYWORD_STATIC";
+    case TokenType::TOKEN_KEYWORD_NULL:
+      return "TOKEN_KEYWORD_NULL";
     case TokenType::TOKEN_SEMICOLON:
       return "TOKEN_SEMICOLON";
     case TokenType::TOKEN_COLON:
@@ -370,8 +396,24 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_LEFT_BRACE";
     case TokenType::TOKEN_RIGHT_BRACE:
       return "TOKEN_RIGHT_BRACE";
+    case TokenType::TOKEN_LEFT_BRACKET:
+      return "TOKEN_LEFT_BRACKET";
+    case TokenType::TOKEN_RIGHT_BRACKET:
+      return "TOKEN_RIGHT_BRACKET";
     case TokenType::TOKEN_BANG:
       return "TOKEN_BANG";
+    case TokenType::TOKEN_AMPERSAND:
+      return "TOKEN_AMPERSAND";
+    case TokenType::TOKEN_HAT:
+      return "TOKEN_HAT";
+    case TokenType::TOKEN_QUESTION:
+      return "TOKEN_QUESTION";
+    case TokenType::TOKEN_ARROW:
+      return "TOKEN_ARROW";
+    case TokenType::TOKEN_DOT:
+      return "TOKEN_DOT";
+    case TokenType::TOKEN_DOT_DOT:
+      return "TOKEN_DOT_DOT";
     case TokenType::TOKEN_ERROR:
       return "TOKEN_ERROR";
     default:

@@ -5,25 +5,26 @@
 #include <stdexcept>
 #include <typeinfo>
 
+#include "../common/logger.hh"
 #include "../parser/ast.hh"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/Verifier.h"  // Nützlich zum Überprüfen des generierten Codes
-#include "llvm/Support/TargetSelect.h"  // For getDefaultTargetTriple
+#include "llvm/IR/Verifier.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
 CodeGen::CodeGen() {
   context = std::make_unique<llvm::LLVMContext>();
   module = std::make_unique<llvm::Module>("MyLoomModule", *context);
   builder = std::make_unique<llvm::IRBuilder<>>(*context);
-  current_function = nullptr;  // Initialize current function context
+  current_function = nullptr;
 }
 
 void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
-  std::cout << "[CodeGen] Starting code generation..." << std::endl;
+  Logger::debug("Starting code generation");
 
-  // 1. Check if there's a main function in the AST
+  // Check for main function
   bool has_main_function = false;
   for (const auto& stmt : ast) {
     if (auto* func_decl = dynamic_cast<FunctionDeclNode*>(stmt.get())) {
@@ -33,17 +34,15 @@ void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
       }
     }
   }
-
-  // 2. Error if no main function found
   if (!has_main_function) {
-    throw std::runtime_error(
-        "Error: No 'main' function found in program. Every Loom program must "
-        "have a main function.");
+    Logger::error(
+        "No 'main' function found in program. Every Loom program must have a "
+        "main function.");
+    throw std::runtime_error("Missing main function");
   }
 
   std::cout << "[CodeGen] Found main function in AST" << std::endl;
 
-  // 3. Generate code for all statements (including main function)
   std::cout << "[CodeGen] Processing " << ast.size() << " statements..."
             << std::endl;
 
@@ -60,16 +59,14 @@ void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
               << std::endl;
     std::cout << "[CodeGen] Printing IR so far:" << std::endl;
     print_ir();
-    throw;  // Re-throw the exception
+    throw;
   }
-  // 4. Verify all functions in the module
   std::cout << "[CodeGen] Verifying function..." << std::endl;
   for (auto& function : *module) {
     llvm::verifyFunction(function);
   }
   std::cout << "[CodeGen] Function verification completed" << std::endl;
 
-  // 5. Generate Windows entry point for freestanding executable
   generateEntryPoint();
 
   std::cout << "[CodeGen] Code generation completed successfully!" << std::endl;
@@ -96,7 +93,6 @@ void CodeGen::generateEntryPoint() {
   if (platform == TargetPlatform::Windows) {
     std::cout << "[CodeGen] Generating Windows entry point..." << std::endl;
 
-    // Create mainCRTStartup function that calls our main function
     llvm::FunctionType* entryType = llvm::FunctionType::get(
         builder->getVoidTy(),  // void return (Windows entry points return void)
         {},                    // no parameters
@@ -222,10 +218,6 @@ llvm::Value* CodeGen::generateLinuxSyscall(const std::string& name,
   std::cout << "[CodeGen] Generating Linux syscall: " << name << std::endl;
 
   if (name == "print" && args.size() >= 1) {
-    // Linux write syscall: sys_write = 1
-    // int64_t write(int fd, const void *buf, size_t count)
-
-    // Create the inline assembly for Linux x86_64 syscall
     std::string asmStr = "syscall";
     std::string constraintStr =
         "={rax},0,{rdi},{rsi},{rdx},~{rcx},~{r11}";  // Prepare syscall

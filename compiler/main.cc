@@ -123,9 +123,9 @@ int main(int argc, char* argv[]) {
       std::cout << "Cleaned up temporary object file." << std::endl;
 
       std::cout << "Successfully compiled to: " << output_name << std::endl;
-
     } else {
       std::cout << "Semantic analysis failed!" << std::endl;
+      return 1;  // Exit with error code when semantic analysis fails
     }
     std::cout << "--- Semantic Analyzer Finished ---" << std::endl;
   }

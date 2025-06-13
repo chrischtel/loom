@@ -76,12 +76,29 @@ std::unique_ptr<ExprNode> Parser::parseFactor() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseUnary() {
+  // Handle memory model unary operators
+  if (match(TokenType::TOKEN_AMPERSAND)) {
+    // Reference operator: &expr
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseUnary();
+    return std::make_unique<ReferenceExpr>(op.location, std::move(right));
+  }
+
+  if (match(TokenType::TOKEN_STAR) || match(TokenType::TOKEN_HAT)) {
+    // Dereference operators: *expr or ^expr
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseUnary();
+    return std::make_unique<DereferenceExpr>(op.location, std::move(right),
+                                             op.type);
+  }
+
+  // Handle traditional unary operators
   if (match(TokenType::TOKEN_MINUS) || match(TokenType::TOKEN_BANG)) {
     const LoomToken& op = previous();
     std::unique_ptr<ExprNode> right = parseUnary();
-
     return std::make_unique<UnaryExpr>(op, std::move(right));
   }
+
   return parseCall();
 }
 
@@ -111,6 +128,11 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
   if (match(TokenType::TOKEN_KEYWORD_FALSE)) {
     return std::make_unique<BooleanLiteral>(previous().location, false);
   }
+  if (match(TokenType::TOKEN_KEYWORD_NULL)) {
+    const LoomToken& token = previous();
+    return std::make_unique<Identifier>(
+        token.location, "null");  // For now, treat as identifier
+  }
 
   if (match(TokenType::TOKEN_LEFT_PAREN)) {
     std::unique_ptr<ExprNode> expr = parseExpression();
@@ -125,10 +147,35 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
 }
 
 std::unique_ptr<TypeNode> Parser::parseType() {
+  // Handle memory model prefix types: &T, ^T, []T
+  if (match(TokenType::TOKEN_AMPERSAND)) {
+    // Reference type: &T
+    LoomSourceLocation loc = previous().location;
+    auto inner_type = parseType();
+    return std::make_unique<ReferenceTypeNode>(loc, std::move(inner_type));
+  }
+
+  if (match(TokenType::TOKEN_HAT)) {
+    // Owned pointer type: ^T
+    LoomSourceLocation loc = previous().location;
+    auto inner_type = parseType();
+    return std::make_unique<OwnedPointerTypeNode>(loc, std::move(inner_type));
+  }
+
+  if (match(TokenType::TOKEN_LEFT_BRACKET)) {
+    // Slice type: []T
+    LoomSourceLocation loc = previous().location;
+    consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after '['");
+    auto element_type = parseType();
+    return std::make_unique<SliceTypeNode>(loc, std::move(element_type));
+  }
+
+  // Parse base type
   const LoomToken& type_token = peek();
   consume(TokenType::TOKEN_IDENTIFIER, "Expected type name.");
 
   std::string type_name = type_token.value;
+  std::unique_ptr<TypeNode> base_type;
 
   // Parse integer types (i8, i16, i32, i64, u8, u16, u32, u64)
   if (type_name.length() >= 2) {
@@ -141,8 +188,8 @@ std::unique_ptr<TypeNode> Parser::parseType() {
         if (bit_width == 8 || bit_width == 16 || bit_width == 32 ||
             bit_width == 64) {
           bool is_signed = (first_char == 'i');
-          return std::make_unique<IntegerTypeNode>(type_token.location,
-                                                   bit_width, is_signed);
+          base_type = std::make_unique<IntegerTypeNode>(type_token.location,
+                                                        bit_width, is_signed);
         }
       } catch (const std::exception&) {
         // Fall through to handle as a regular type
@@ -155,8 +202,8 @@ std::unique_ptr<TypeNode> Parser::parseType() {
         int bit_width = std::stoi(bit_width_str);
         // Validate common float bit widths
         if (bit_width == 16 || bit_width == 32 || bit_width == 64) {
-          return std::make_unique<FloatTypeNode>(type_token.location,
-                                                 bit_width);
+          base_type =
+              std::make_unique<FloatTypeNode>(type_token.location, bit_width);
         }
       } catch (const std::exception&) {
         // Fall through to handle as a regular type
@@ -164,16 +211,26 @@ std::unique_ptr<TypeNode> Parser::parseType() {
     }
   }
 
-  // Handle special types
-  if (type_name == "bool") {
-    return std::make_unique<BooleanTypeNode>(type_token.location);
-  } else if (type_name == "string") {
-    return std::make_unique<StringTypeNode>(type_token.location);
+  // Handle special types if base_type wasn't set
+  if (!base_type) {
+    if (type_name == "bool") {
+      base_type = std::make_unique<BooleanTypeNode>(type_token.location);
+    } else if (type_name == "string") {
+      base_type = std::make_unique<StringTypeNode>(type_token.location);
+    } else {
+      // For now, treat unknown types as generic TypeNodes
+      // In a real compiler, this would be an error
+      throw std::runtime_error("Unknown type: " + type_name);
+    }
   }
 
-  // For now, treat unknown types as generic TypeNodes
-  // In a real compiler, this would be an error
-  throw std::runtime_error("Unknown type: " + type_name);
+  // Handle nullable suffix: T?
+  if (match(TokenType::TOKEN_QUESTION)) {
+    LoomSourceLocation loc = previous().location;
+    return std::make_unique<NullableTypeNode>(loc, std::move(base_type));
+  }
+
+  return base_type;
 }
 
 std::unique_ptr<ExprNode> Parser::parseCall() {
@@ -182,6 +239,46 @@ std::unique_ptr<ExprNode> Parser::parseCall() {
   while (true) {
     if (match(TokenType::TOKEN_LEFT_PAREN)) {
       expr = finishCall(std::move(expr));
+    } else if (match(TokenType::TOKEN_DOT)) {
+      // Member access: expr.field
+      const LoomToken& dot = previous();
+      consume(TokenType::TOKEN_IDENTIFIER, "Expected field name after '.'");
+      const LoomToken& field = previous();
+      expr = std::make_unique<MemberAccessExpr>(dot.location, std::move(expr),
+                                                field.value);
+    } else if (match(TokenType::TOKEN_ARROW)) {
+      // Pointer access: expr->field
+      const LoomToken& arrow = previous();
+      consume(TokenType::TOKEN_IDENTIFIER, "Expected field name after '->'");
+      const LoomToken& field = previous();
+      expr = std::make_unique<PointerAccessExpr>(arrow.location,
+                                                 std::move(expr), field.value);
+    } else if (match(TokenType::TOKEN_LEFT_BRACKET)) {
+      // Array indexing or slice: expr[index] or expr[start..end]
+      const LoomToken& bracket = previous();
+      std::unique_ptr<ExprNode> start = parseExpression();
+
+      if (match(TokenType::TOKEN_DOT_DOT)) {
+        // Slice expression: expr[start..end]
+        std::unique_ptr<ExprNode> end = nullptr;
+        if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+          end = parseExpression();
+        }
+        consume(TokenType::TOKEN_RIGHT_BRACKET,
+                "Expected ']' after slice expression");
+        expr = std::make_unique<SliceExpr>(bracket.location, std::move(expr),
+                                           std::move(start), std::move(end));
+      } else {
+        // Array indexing: expr[index] - TODO: implement ArrayIndexExpr
+        consume(TokenType::TOKEN_RIGHT_BRACKET,
+                "Expected ']' after array index");
+        // For now, treat single index as slice with same start and end
+        auto end_copy = std::unique_ptr<ExprNode>(
+            nullptr);  // TODO: clone start for single index
+        expr =
+            std::make_unique<SliceExpr>(bracket.location, std::move(expr),
+                                        std::move(start), std::move(end_copy));
+      }
     } else {
       break;
     }
