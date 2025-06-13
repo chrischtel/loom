@@ -497,6 +497,53 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(
   }
 }
 
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BuiltinCallExpr& node) {
+  std::cout << "[SemanticAnalyzer] Analyzing builtin call: $$"
+            << node.builtin_name << std::endl;
+
+  // Validate arguments
+  for (auto& arg : node.arguments) {
+    if (!arg->accept(*this)) {
+      return nullptr;  // Error in argument
+    }
+  }
+
+  // Validate specific builtin functions
+  if (node.builtin_name == "print") {
+    // $$print can take string or integer arguments
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$print expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    // Return void for print
+    return std::make_unique<IntegerTypeNode>(node.location, 32,
+                                             true);  // i32 for now
+  } else if (node.builtin_name == "exit") {
+    // $$exit takes an integer exit code
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$exit expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    // Return void (never returns)
+    return std::make_unique<IntegerTypeNode>(node.location, 32,
+                                             true);  // i32 for now
+  } else if (node.builtin_name == "syscall") {
+    // $$syscall takes syscall number + arguments
+    if (node.arguments.size() < 1) {
+      error(node.location,
+            "$$syscall expects at least 1 argument (syscall number)");
+      return nullptr;
+    }
+    // Return i64 (syscall return value)
+    return std::make_unique<IntegerTypeNode>(node.location, 64, true);  // i64
+  } else {
+    error(node.location, "Unknown builtin function: $$" + node.builtin_name);
+    return nullptr;
+  }
+}
+
 // Function-related visitor implementations
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FunctionDeclNode& node) {
   if (symbols.isFunction(node.name)) {

@@ -31,6 +31,7 @@ class WhileStmtNode;
 class ExprStmtNode;
 class AssignmentExpr;
 class FunctionCallExpr;
+class BuiltinCallExpr;
 class FunctionDeclNode;
 class ParameterNode;
 class ReturnStmtNode;
@@ -78,6 +79,7 @@ class CodeGen {
   llvm::Value* codegen(ExprStmtNode& node);
   llvm::Value* codegen(AssignmentExpr& node);
   llvm::Value* codegen(FunctionCallExpr& node);
+  llvm::Value* codegen(BuiltinCallExpr& node);
   llvm::Value* codegen(FunctionDeclNode& node);
   llvm::Value* codegen(ReturnStmtNode& node);
   llvm::Value* codegen(BinaryExpr& node);

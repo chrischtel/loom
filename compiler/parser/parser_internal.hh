@@ -44,6 +44,7 @@ class Parser {
   std::unique_ptr<ExprNode> parseUnary();
   std::unique_ptr<ExprNode> parseCall();
   std::unique_ptr<ExprNode> parsePrimary();
+  std::unique_ptr<ExprNode> parseBuiltinCall();
   std::unique_ptr<ExprNode> finishCall(std::unique_ptr<ExprNode> callee);
   std::unique_ptr<TypeNode> parseType();
 

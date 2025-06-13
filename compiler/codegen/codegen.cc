@@ -225,6 +225,10 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
     std::cout << "[CodeGen] Processing FunctionCallExpr" << std::endl;
     return codegen(*n);
   }
+  if (auto* n = dynamic_cast<BuiltinCallExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing BuiltinCallExpr" << std::endl;
+    return codegen(*n);
+  }
   if (auto* n = dynamic_cast<FunctionDeclNode*>(&node)) {
     std::cout << "[CodeGen] Processing FunctionDeclNode" << std::endl;
     return codegen(*n);
@@ -676,6 +680,69 @@ llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {
   std::cout << "[CodeGen] Creating call to function: " << node.function_name
             << " with " << args.size() << " arguments" << std::endl;
   return builder->CreateCall(target_func, args, node.function_name + ".call");
+}
+
+llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
+  std::cout << "[CodeGen] Generating BuiltinCallExpr: $$" << node.builtin_name
+            << std::endl;
+
+  if (node.builtin_name == "print") {
+    // Use the same printf implementation as regular print
+    llvm::Function* printf_func = module->getFunction("printf");
+    if (!printf_func) {
+      llvm::FunctionType* printf_type = llvm::FunctionType::get(
+          builder->getInt32Ty(), {llvm::PointerType::getUnqual(*context)},
+          true  // vararg
+      );
+      printf_func = llvm::Function::Create(
+          printf_type, llvm::Function::ExternalLinkage, "printf", module.get());
+    }
+
+    if (node.arguments.size() != 1) {
+      throw std::runtime_error("$$print expects exactly 1 argument");
+    }
+
+    llvm::Value* arg = codegen(*node.arguments[0]);
+    if (!arg) return nullptr;
+
+    std::vector<llvm::Value*> printf_args;  // Handle different argument types
+    if (arg->getType()->isIntegerTy()) {
+      // Integer argument - create "%d\n" format string
+      llvm::Value* format_str = builder->CreateGlobalString("%d\n");
+      printf_args = {format_str, arg};
+    } else if (arg->getType()->isPointerTy()) {
+      // String argument - use "%s\n" format string
+      llvm::Value* format_str = builder->CreateGlobalString("%s\n");
+      printf_args = {format_str, arg};
+    } else {
+      throw std::runtime_error("Unsupported argument type for $$print");
+    }
+
+    return builder->CreateCall(printf_func, printf_args, "print.call");
+
+  } else if (node.builtin_name == "exit") {
+    // $$exit implementation - call libc exit for now
+    llvm::Function* exit_func = module->getFunction("exit");
+    if (!exit_func) {
+      llvm::FunctionType* exit_type = llvm::FunctionType::get(
+          builder->getVoidTy(), {builder->getInt32Ty()}, false);
+      exit_func = llvm::Function::Create(
+          exit_type, llvm::Function::ExternalLinkage, "exit", module.get());
+    }
+
+    if (node.arguments.size() != 1) {
+      throw std::runtime_error("$$exit expects exactly 1 argument");
+    }
+    llvm::Value* exit_code = codegen(*node.arguments[0]);
+    if (!exit_code) return nullptr;
+
+    builder->CreateCall(exit_func, {exit_code});
+    return nullptr;  // exit never returns
+
+  } else {
+    throw std::runtime_error("Unknown builtin function: $$" +
+                             node.builtin_name);
+  }
 }
 
 // --- Integrated Compilation Methods (like Kaleidoscope) ---

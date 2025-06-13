@@ -165,10 +165,23 @@ LoomToken Scanner::scanString() {
   if (isAtEnd()) {
     return makeErrorToken("Unterminated string", '"');
   }
-
   // Consume the closing quote
   advance();
   return makeToken(TokenType::TOKEN_STRING);
+}
+
+LoomToken Scanner::scanBuiltin() {
+  // We already consumed "$$", now scan the builtin name
+  while (isalnum(peek()) || peek() == '_') {
+    advance();
+  }
+
+  // Make sure we have a valid builtin name (at least one character after $$)
+  if (current_offset - start_offset <= 2) {
+    return makeErrorToken("Invalid builtin name after '$$'", peek());
+  }
+
+  return makeToken(TokenType::TOKEN_BUILTIN);
 }
 
 LoomToken Scanner::scanMultiLineComment() {
@@ -261,7 +274,6 @@ LoomToken Scanner::scanNextToken() {
       } else {
         return scanString();
       }
-
     case '/':
       if (match('/')) {
         // Kommentar bis zum Zeilenende überspringen
@@ -272,6 +284,15 @@ LoomToken Scanner::scanNextToken() {
         return scanNextToken();
       } else {
         return makeToken(TokenType::TOKEN_SLASH);
+      }
+
+    case '$':
+      if (match('$')) {
+        // $$builtin function - scan the identifier part
+        return scanBuiltin();
+      } else {
+        return makeErrorToken(
+            "Unexpected character '$'. Did you mean '$$' for builtin?", c);
       }
 
     default:
@@ -293,6 +314,8 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_STRING";
     case TokenType::TOKEN_IDENTIFIER:
       return "TOKEN_IDENTIFIER";
+    case TokenType::TOKEN_BUILTIN:
+      return "TOKEN_BUILTIN";
     case TokenType::TOKEN_KEYWORD_LET:
       return "TOKEN_KEYWORD_LET";
     case TokenType::TOKEN_KEYWORD_MUT:

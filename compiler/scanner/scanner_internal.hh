@@ -32,9 +32,10 @@ enum class TokenType {
   TOKEN_NUMBER_INT,
   TOKEN_NUMBER_FLOAT,
   TOKEN_STRING,
-
   // Identifiers
   TOKEN_IDENTIFIER,
+  TOKEN_BUILTIN,  // $$builtin functions
+
   // Keywords
   TOKEN_KEYWORD_LET,     // unmutable variabiable declaration
   TOKEN_KEYWORD_MUT,     // mutable variabiable declaration
@@ -109,10 +110,10 @@ class Scanner {
   bool match(char expected);
 
   LoomSourceLocation getCurrentLocation();
-
   LoomToken makeToken(TokenType type);
   LoomToken makeErrorToken(const std::string &message, char offending_char);
   LoomToken scanNumber();
   LoomToken scanIdentifier();
   LoomToken scanString();
+  LoomToken scanBuiltin();
 };

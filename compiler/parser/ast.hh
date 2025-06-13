@@ -22,6 +22,7 @@ class ExprStmtNode;
 class IfStmtNode;
 class WhileStmtNode;
 class FunctionCallExpr;
+class BuiltinCallExpr;
 class TypeNode;
 class IntegerTypeNode;
 class FloatTypeNode;
@@ -50,6 +51,7 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(IfStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(WhileStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FunctionCallExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(BuiltinCallExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(TypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IntegerTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FloatTypeNode& node) = 0;
@@ -601,6 +603,31 @@ class FunctionCallExpr : public ExprNode {
 
   std::string toString() const override {
     std::string result = "FunctionCall(" + function_name + "(";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += arguments[i] ? arguments[i]->toString() : "null";
+    }
+    result += "))";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// BuiltinCallExpr for $$builtin() calls
+class BuiltinCallExpr : public ExprNode {
+ public:
+  std::string builtin_name;  // e.g., "print", "exit", "syscall"
+  std::vector<std::unique_ptr<ExprNode>> arguments;
+
+  BuiltinCallExpr(const LoomSourceLocation& loc, const std::string& name,
+                  std::vector<std::unique_ptr<ExprNode>> args)
+      : ExprNode(loc), builtin_name(name), arguments(std::move(args)) {}
+
+  std::string toString() const override {
+    std::string result = "BuiltinCall($$" + builtin_name + "(";
     for (size_t i = 0; i < arguments.size(); ++i) {
       if (i > 0) result += ", ";
       result += arguments[i] ? arguments[i]->toString() : "null";

@@ -98,6 +98,9 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
     const LoomToken& token = previous();
     return std::make_unique<Identifier>(token.location, token.value);
   }
+  if (match(TokenType::TOKEN_BUILTIN)) {
+    return parseBuiltinCall();
+  }
   if (match(TokenType::TOKEN_STRING)) {
     const LoomToken& token = previous();
     return std::make_unique<StringLiteral>(token.location, token.value);
@@ -206,4 +209,28 @@ std::unique_ptr<ExprNode> Parser::finishCall(std::unique_ptr<ExprNode> callee) {
 
   error(previous(), "Only identifiers can be called as functions.");
   return nullptr;
+}
+
+std::unique_ptr<ExprNode> Parser::parseBuiltinCall() {
+  const LoomToken& builtin_token = previous();
+
+  // Extract the builtin name (remove the $$ prefix)
+  std::string builtin_name = builtin_token.value.substr(2);  // Remove "$$"
+
+  // Expect opening parenthesis
+  consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after builtin name.");
+
+  // Parse arguments (same as regular function calls)
+  std::vector<std::unique_ptr<ExprNode>> arguments;
+  if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+    do {
+      arguments.push_back(parseExpression());
+    } while (match(TokenType::TOKEN_COMMA));
+  }
+
+  consume(TokenType::TOKEN_RIGHT_PAREN,
+          "Expected ')' after builtin arguments.");
+
+  return std::make_unique<BuiltinCallExpr>(builtin_token.location, builtin_name,
+                                           std::move(arguments));
 }
