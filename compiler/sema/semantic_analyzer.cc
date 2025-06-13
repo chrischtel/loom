@@ -525,15 +525,16 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BuiltinCallExpr& node) {
       error(node.location, "$$exit expects exactly 1 argument, got " +
                                std::to_string(node.arguments.size()));
       return nullptr;
-    }
-    // Return void (never returns)
+    }  // Return void (never returns)
     return std::make_unique<IntegerTypeNode>(node.location, 32,
                                              true);  // i32 for now
   } else if (node.builtin_name == "syscall") {
-    // $$syscall takes syscall number + arguments
-    if (node.arguments.size() < 1) {
+    // $$syscall takes syscall number + up to 6 arguments (Windows API mapping)
+    if (node.arguments.size() < 1 || node.arguments.size() > 7) {
       error(node.location,
-            "$$syscall expects at least 1 argument (syscall number)");
+            "$$syscall expects 1-7 arguments (syscall number + up to 6 args), "
+            "got " +
+                std::to_string(node.arguments.size()));
       return nullptr;
     }
     // Return i64 (syscall return value)

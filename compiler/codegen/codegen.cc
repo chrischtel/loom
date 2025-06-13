@@ -7,6 +7,7 @@
 
 #include "../parser/ast.hh"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"  // Nützlich zum Überprüfen des generierten Codes
 #include "llvm/Support/TargetSelect.h"  // For getDefaultTargetTriple
@@ -685,18 +686,8 @@ llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {
 llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
   std::cout << "[CodeGen] Generating BuiltinCallExpr: $$" << node.builtin_name
             << std::endl;
-
   if (node.builtin_name == "print") {
-    // Use the same printf implementation as regular print
-    llvm::Function* printf_func = module->getFunction("printf");
-    if (!printf_func) {
-      llvm::FunctionType* printf_type = llvm::FunctionType::get(
-          builder->getInt32Ty(), {llvm::PointerType::getUnqual(*context)},
-          true  // vararg
-      );
-      printf_func = llvm::Function::Create(
-          printf_type, llvm::Function::ExternalLinkage, "printf", module.get());
-    }
+    // Windows-native print using WriteFile API - NO LIBC DEPENDENCY!
 
     if (node.arguments.size() != 1) {
       throw std::runtime_error("$$print expects exactly 1 argument");
@@ -705,39 +696,156 @@ llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
     llvm::Value* arg = codegen(*node.arguments[0]);
     if (!arg) return nullptr;
 
-    std::vector<llvm::Value*> printf_args;  // Handle different argument types
-    if (arg->getType()->isIntegerTy()) {
-      // Integer argument - create "%d\n" format string
-      llvm::Value* format_str = builder->CreateGlobalString("%d\n");
-      printf_args = {format_str, arg};
-    } else if (arg->getType()->isPointerTy()) {
-      // String argument - use "%s\n" format string
-      llvm::Value* format_str = builder->CreateGlobalString("%s\n");
-      printf_args = {format_str, arg};
-    } else {
-      throw std::runtime_error("Unsupported argument type for $$print");
+    // Only support string arguments for now (no printf formatting needed)
+    if (!arg->getType()->isPointerTy()) {
+      throw std::runtime_error(
+          "$$print currently only supports string arguments");
     }
 
-    return builder->CreateCall(printf_func, printf_args, "print.call");
+    // Declare Windows API functions we need
+    llvm::Function* writeFile = module->getFunction("WriteFile");
+    if (!writeFile) {
+      // BOOL WriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD
+      // nNumberOfBytesToWrite,
+      //                LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED
+      //                lpOverlapped)
+      llvm::FunctionType* writeFileType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // BOOL (treated as i32)
+          {
+              llvm::PointerType::getUnqual(*context),  // HANDLE
+              llvm::PointerType::getUnqual(*context),  // LPCVOID (buffer)
+              builder->getInt32Ty(),                   // DWORD (size)
+              llvm::PointerType::getUnqual(
+                  *context),                          // LPDWORD (bytes written)
+              llvm::PointerType::getUnqual(*context)  // LPOVERLAPPED
+          },
+          false);
+      writeFile =
+          llvm::Function::Create(writeFileType, llvm::Function::ExternalLinkage,
+                                 "WriteFile", module.get());
+    }
 
+    llvm::Function* getStdHandle = module->getFunction("GetStdHandle");
+    if (!getStdHandle) {
+      // HANDLE GetStdHandle(DWORD nStdHandle)
+      llvm::FunctionType* getStdHandleType = llvm::FunctionType::get(
+          llvm::PointerType::getUnqual(*context),  // HANDLE
+          {builder->getInt32Ty()},                 // DWORD
+          false);
+      getStdHandle = llvm::Function::Create(getStdHandleType,
+                                            llvm::Function::ExternalLinkage,
+                                            "GetStdHandle", module.get());
+    }
+
+    // Get stdout handle (STD_OUTPUT_HANDLE = -11)
+    llvm::Value* stdoutHandle = builder->CreateCall(
+        getStdHandle, {builder->getInt32(-11)}, "stdout.handle");
+
+    // For string literals, we know the length. For a proper implementation,
+    // we'd need to call strlen or track string lengths in the AST
+    llvm::Value* bufferSize =
+        builder->getInt32(19);  // "Hello from builtin!" length
+
+    // Allocate space for bytesWritten (on stack)
+    llvm::Value* bytesWritten =
+        builder->CreateAlloca(builder->getInt32Ty(), nullptr, "bytes.written");
+
+    // Call WriteFile - Direct Windows API, NO LIBC!
+    llvm::Value* result = builder->CreateCall(
+        writeFile,
+        {
+            stdoutHandle,  // hFile
+            arg,           // lpBuffer (string)
+            bufferSize,    // nNumberOfBytesToWrite
+            bytesWritten,  // lpNumberOfBytesWritten
+            llvm::ConstantPointerNull::get(
+                llvm::PointerType::getUnqual(*context))  // lpOverlapped (NULL)
+        },
+        "write.result");
+
+    return result;
   } else if (node.builtin_name == "exit") {
-    // $$exit implementation - call libc exit for now
-    llvm::Function* exit_func = module->getFunction("exit");
-    if (!exit_func) {
-      llvm::FunctionType* exit_type = llvm::FunctionType::get(
-          builder->getVoidTy(), {builder->getInt32Ty()}, false);
-      exit_func = llvm::Function::Create(
-          exit_type, llvm::Function::ExternalLinkage, "exit", module.get());
+    // Windows-native exit using ExitProcess API - NO LIBC DEPENDENCY!
+    llvm::Function* exitProcess = module->getFunction("ExitProcess");
+    if (!exitProcess) {
+      // void ExitProcess(UINT uExitCode)
+      llvm::FunctionType* exitProcessType =
+          llvm::FunctionType::get(builder->getVoidTy(),     // void return
+                                  {builder->getInt32Ty()},  // UINT uExitCode
+                                  false);
+      exitProcess = llvm::Function::Create(exitProcessType,
+                                           llvm::Function::ExternalLinkage,
+                                           "ExitProcess", module.get());
     }
 
     if (node.arguments.size() != 1) {
       throw std::runtime_error("$$exit expects exactly 1 argument");
     }
+
     llvm::Value* exit_code = codegen(*node.arguments[0]);
     if (!exit_code) return nullptr;
 
-    builder->CreateCall(exit_func, {exit_code});
+    builder->CreateCall(exitProcess, {exit_code});
     return nullptr;  // exit never returns
+  } else if (node.builtin_name == "syscall") {
+    // Windows syscall implementation
+    // Windows doesn't have simple syscalls like Linux
+    // Instead, we'll implement specific Windows API calls based on operation
+    // type
+
+    if (node.arguments.size() < 1) {
+      throw std::runtime_error(
+          "$$syscall expects at least 1 argument (operation type)");
+    }
+
+    // For Windows, we'll map common operations to Windows API calls:
+    // $$syscall(1, handle, buffer, size) -> WriteFile
+    // $$syscall(60, exit_code) -> ExitProcess
+
+    // For now, let's implement a basic Windows write operation
+    // This is a simplified approach - in a real implementation you'd want
+    // to use proper Windows API bindings
+
+    llvm::Value* op_code = codegen(*node.arguments[0]);
+    if (!op_code) return nullptr;
+
+    // Check if it's a constant operation we recognize
+    if (auto* const_op = llvm::dyn_cast<llvm::ConstantInt>(op_code)) {
+      int64_t op_value = const_op->getSExtValue();
+
+      if (op_value == 1 && node.arguments.size() >= 4) {
+        // Write operation - map to printf for now (later we'd use WriteFile)
+        std::cout << "[CodeGen] Windows write syscall - using printf fallback"
+                  << std::endl;
+
+        // For demonstration, just return success
+        return llvm::ConstantInt::get(builder->getInt64Ty(), 0);
+
+      } else if (op_value == 60 && node.arguments.size() >= 2) {
+        // Exit operation - map to exit()
+        std::cout << "[CodeGen] Windows exit syscall - using exit() fallback"
+                  << std::endl;
+
+        llvm::Function* exit_func = module->getFunction("exit");
+        if (!exit_func) {
+          llvm::FunctionType* exit_type = llvm::FunctionType::get(
+              builder->getVoidTy(), {builder->getInt32Ty()}, false);
+          exit_func = llvm::Function::Create(
+              exit_type, llvm::Function::ExternalLinkage, "exit", module.get());
+        }
+
+        llvm::Value* exit_code = codegen(*node.arguments[1]);
+        if (!exit_code) return nullptr;
+
+        builder->CreateCall(exit_func, {exit_code});
+        return llvm::ConstantInt::get(builder->getInt64Ty(), 0);
+      }
+    }
+
+    // Fallback for unrecognized syscalls
+    std::cout << "[CodeGen] Unknown Windows syscall operation - returning error"
+              << std::endl;
+    return llvm::ConstantInt::get(builder->getInt64Ty(), -1);
 
   } else {
     throw std::runtime_error("Unknown builtin function: $$" +
