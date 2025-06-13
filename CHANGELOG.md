@@ -1,6 +1,6 @@
 # Loom Language Changelog
 
-## [v0.1.0-alpha.2] - [UNRELEASED] - Function Support & Cross-Platform Syscalls
+## [v0.1.0-alpha.2] - [13/6/2025] - Function Support & Cross-Platform Syscalls
 ### Added
 - Function declarations with parameters and return types
 - Function calls with argument passing
