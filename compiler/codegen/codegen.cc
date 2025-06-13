@@ -91,54 +91,382 @@ void CodeGen::writeIRToFile(const std::string& filename) const {
 }
 
 void CodeGen::generateEntryPoint() {
-  std::cout << "[CodeGen] Generating Windows entry point..." << std::endl;
+  TargetPlatform platform = detectTargetPlatform();
 
-  // Create mainCRTStartup function that calls our main function
-  llvm::FunctionType* entryType = llvm::FunctionType::get(
-      builder->getVoidTy(),  // void return (Windows entry points return void)
-      {},                    // no parameters
-      false                  // not variadic
-  );
+  if (platform == TargetPlatform::Windows) {
+    std::cout << "[CodeGen] Generating Windows entry point..." << std::endl;
 
-  llvm::Function* entryFunc = llvm::Function::Create(
-      entryType, llvm::Function::ExternalLinkage,
-      "mainCRTStartup",  // Windows expects this entry point
-      module.get());
+    // Create mainCRTStartup function that calls our main function
+    llvm::FunctionType* entryType = llvm::FunctionType::get(
+        builder->getVoidTy(),  // void return (Windows entry points return void)
+        {},                    // no parameters
+        false                  // not variadic
+    );
 
-  // Create entry block
-  llvm::BasicBlock* entryBlock =
-      llvm::BasicBlock::Create(*context, "entry", entryFunc);
-  builder->SetInsertPoint(entryBlock);
+    llvm::Function* entryFunc = llvm::Function::Create(
+        entryType, llvm::Function::ExternalLinkage,
+        "mainCRTStartup",  // Windows expects this entry point
+        module.get());
 
-  // Get the main function
-  llvm::Function* mainFunc = module->getFunction("main");
-  if (!mainFunc) {
-    throw std::runtime_error(
-        "Cannot find main function for entry point generation");
+    // Create entry block
+    llvm::BasicBlock* entryBlock =
+        llvm::BasicBlock::Create(*context, "entry", entryFunc);
+    builder->SetInsertPoint(entryBlock);
+
+    // Get the main function
+    llvm::Function* mainFunc = module->getFunction("main");
+    if (!mainFunc) {
+      throw std::runtime_error(
+          "Cannot find main function for entry point generation");
+    }
+
+    // Call main function
+    llvm::Value* mainResult = builder->CreateCall(mainFunc, {}, "main.result");
+
+    // Exit with the result from main using ExitProcess
+    llvm::Function* exitProcess = module->getFunction("ExitProcess");
+    if (!exitProcess) {
+      llvm::FunctionType* exitProcessType =
+          llvm::FunctionType::get(builder->getVoidTy(),     // void return
+                                  {builder->getInt32Ty()},  // UINT uExitCode
+                                  false);
+      exitProcess = llvm::Function::Create(exitProcessType,
+                                           llvm::Function::ExternalLinkage,
+                                           "ExitProcess", module.get());
+    }
+    builder->CreateCall(exitProcess, {mainResult});
+    builder->CreateUnreachable();
+
+  } else if (platform == TargetPlatform::Linux ||
+             platform == TargetPlatform::MacOS) {
+    std::cout << "[CodeGen] Generating Unix-style entry point..." << std::endl;
+
+    // For Linux/macOS, create _start function that calls main and then exit
+    // syscall
+    llvm::FunctionType* entryType =
+        llvm::FunctionType::get(builder->getVoidTy(),  // void return
+                                {},                    // no parameters
+                                false                  // not variadic
+        );
+
+    llvm::Function* entryFunc =
+        llvm::Function::Create(entryType, llvm::Function::ExternalLinkage,
+                               "_start",  // Unix expects this entry point
+                               module.get());
+
+    // Create entry block
+    llvm::BasicBlock* entryBlock =
+        llvm::BasicBlock::Create(*context, "entry", entryFunc);
+    builder->SetInsertPoint(entryBlock);
+
+    // Get the main function
+    llvm::Function* mainFunc = module->getFunction("main");
+    if (!mainFunc) {
+      throw std::runtime_error(
+          "Cannot find main function for entry point generation");
+    }
+
+    // Call main function
+    llvm::Value* mainResult = builder->CreateCall(mainFunc, {}, "main.result");
+
+    // Exit with the result from main using syscall
+    std::vector<llvm::Value*> exitArgs = {mainResult};
+    if (platform == TargetPlatform::Linux) {
+      generateLinuxSyscall("exit", exitArgs);
+    } else {
+      generateMacOSSyscall("exit", exitArgs);
+    }
+    builder->CreateUnreachable();
   }
-
-  // Call main function
-  llvm::Value* mainResult = builder->CreateCall(mainFunc, {}, "main.result");
-
-  // Exit with the result from main
-  // We need to call ExitProcess with the return value from main
-  llvm::Function* exitProcess = module->getFunction("ExitProcess");
-  if (!exitProcess) {
-    // Declare ExitProcess if not already declared
-    llvm::FunctionType* exitProcessType =
-        llvm::FunctionType::get(builder->getVoidTy(),     // void return
-                                {builder->getInt32Ty()},  // UINT uExitCode
-                                false);
-    exitProcess =
-        llvm::Function::Create(exitProcessType, llvm::Function::ExternalLinkage,
-                               "ExitProcess", module.get());
-  }
-  builder->CreateCall(exitProcess, {mainResult});
-
-  // Add an unreachable instruction since ExitProcess never returns
-  builder->CreateUnreachable();
 
   std::cout << "[CodeGen] Entry point generation completed" << std::endl;
+}
+
+// Platform detection based on target triple
+TargetPlatform CodeGen::detectTargetPlatform() const {
+  llvm::Triple targetTriple(module->getTargetTriple());
+  std::string targetTripleStr = targetTriple.str();
+  std::cout << "[CodeGen] Detecting platform from target triple: "
+            << targetTripleStr << std::endl;
+
+  if (targetTripleStr.find("windows") != std::string::npos ||
+      targetTripleStr.find("win32") != std::string::npos ||
+      targetTripleStr.find("msvc") != std::string::npos) {
+    return TargetPlatform::Windows;
+  } else if (targetTripleStr.find("linux") != std::string::npos) {
+    return TargetPlatform::Linux;
+  } else if (targetTripleStr.find("apple") != std::string::npos ||
+             targetTripleStr.find("darwin") != std::string::npos ||
+             targetTripleStr.find("macos") != std::string::npos) {
+    return TargetPlatform::MacOS;
+  }
+  // Fallback: detect from preprocessor macros at compile time
+#ifdef _WIN32
+  std::cout << "[CodeGen] Defaulting to Windows platform" << std::endl;
+  return TargetPlatform::Windows;
+#elif defined(__linux__)
+  std::cout << "[CodeGen] Defaulting to Linux platform" << std::endl;
+  return TargetPlatform::Linux;
+#elif defined(__APPLE__)
+  std::cout << "[CodeGen] Defaulting to macOS platform" << std::endl;
+  return TargetPlatform::MacOS;
+#else
+  std::cout << "[CodeGen] Unknown target platform" << std::endl;
+  return TargetPlatform::Unknown;
+#endif
+}
+
+// Linux syscall implementation using inline assembly
+llvm::Value* CodeGen::generateLinuxSyscall(const std::string& name,
+                                           std::vector<llvm::Value*>& args) {
+  std::cout << "[CodeGen] Generating Linux syscall: " << name << std::endl;
+
+  if (name == "print" && args.size() >= 1) {
+    // Linux write syscall: sys_write = 1
+    // int64_t write(int fd, const void *buf, size_t count)
+
+    // Create the inline assembly for Linux x86_64 syscall
+    std::string asmStr = "syscall";
+    std::string constraintStr = "={rax},0,{rdi},{rsi},{rdx},~{rcx},~{r11}";
+
+    // Prepare syscall arguments
+    std::vector<llvm::Value*> asmArgs;
+    asmArgs.push_back(
+        llvm::ConstantInt::get(builder->getInt64Ty(), 1));  // sys_write
+    asmArgs.push_back(
+        llvm::ConstantInt::get(builder->getInt64Ty(), 1));  // stdout fd
+    asmArgs.push_back(args[0]);                             // buffer
+
+    // For string literals, calculate length (hardcoded for now, should be
+    // improved)
+    llvm::Value* length = llvm::ConstantInt::get(builder->getInt64Ty(), 19);
+    asmArgs.push_back(length);
+
+    // Create inline assembly call
+    llvm::FunctionType* asmType = llvm::FunctionType::get(
+        builder->getInt64Ty(),
+        {builder->getInt64Ty(), builder->getInt64Ty(),
+         llvm::PointerType::getUnqual(*context), builder->getInt64Ty()},
+        false);
+
+    llvm::InlineAsm* inlineAsm =
+        llvm::InlineAsm::get(asmType, asmStr, constraintStr, true);
+    return builder->CreateCall(inlineAsm, asmArgs, "syscall.result");
+
+  } else if (name == "exit" && args.size() >= 1) {
+    // Linux exit syscall: sys_exit = 60
+
+    std::string asmStr = "syscall";
+    std::string constraintStr = "={rax},0,{rdi},~{rcx},~{r11}";
+
+    std::vector<llvm::Value*> asmArgs;
+    asmArgs.push_back(
+        llvm::ConstantInt::get(builder->getInt64Ty(), 60));  // sys_exit
+    asmArgs.push_back(args[0]);                              // exit code
+
+    llvm::FunctionType* asmType = llvm::FunctionType::get(
+        builder->getInt64Ty(), {builder->getInt64Ty(), builder->getInt64Ty()},
+        false);
+
+    llvm::InlineAsm* inlineAsm =
+        llvm::InlineAsm::get(asmType, asmStr, constraintStr, true);
+    return builder->CreateCall(inlineAsm, asmArgs, "syscall.result");
+
+  } else if (name == "syscall" && args.size() >= 1) {
+    // Generic Linux syscall
+    std::string asmStr = "syscall";
+    std::string constraintStr = "={rax},0";
+
+    std::vector<llvm::Type*> argTypes = {builder->getInt64Ty()};
+    std::vector<llvm::Value*> asmArgs = {args[0]};  // syscall number
+
+    // Add up to 6 syscall arguments (Linux x86_64 calling convention)
+    const char* regs[] = {"{rdi}", "{rsi}", "{rdx}", "{r10}", "{r8}", "{r9}"};
+    for (size_t i = 1; i < args.size() && i <= 6; ++i) {
+      constraintStr += "," + std::string(regs[i - 1]);
+      argTypes.push_back(builder->getInt64Ty());
+      asmArgs.push_back(args[i]);
+    }
+
+    constraintStr += ",~{rcx},~{r11}";
+
+    llvm::FunctionType* asmType =
+        llvm::FunctionType::get(builder->getInt64Ty(), argTypes, false);
+    llvm::InlineAsm* inlineAsm =
+        llvm::InlineAsm::get(asmType, asmStr, constraintStr, true);
+    return builder->CreateCall(inlineAsm, asmArgs, "syscall.result");
+  }
+
+  throw std::runtime_error("Unsupported Linux syscall: " + name);
+}
+
+// macOS syscall implementation using inline assembly
+llvm::Value* CodeGen::generateMacOSSyscall(const std::string& name,
+                                           std::vector<llvm::Value*>& args) {
+  std::cout << "[CodeGen] Generating macOS syscall: " << name << std::endl;
+
+  if (name == "print" && args.size() >= 1) {
+    // macOS write syscall: 0x2000004 (BSD syscall numbers are offset by
+    // 0x2000000)
+
+    std::string asmStr = "syscall";
+    std::string constraintStr = "={rax},0,{rdi},{rsi},{rdx},~{rcx},~{r11}";
+
+    std::vector<llvm::Value*> asmArgs;
+    asmArgs.push_back(
+        llvm::ConstantInt::get(builder->getInt64Ty(), 0x2000004));  // sys_write
+    asmArgs.push_back(
+        llvm::ConstantInt::get(builder->getInt64Ty(), 1));  // stdout fd
+    asmArgs.push_back(args[0]);                             // buffer
+
+    // For string literals, calculate length (hardcoded for now, should be
+    // improved)
+    llvm::Value* length = llvm::ConstantInt::get(builder->getInt64Ty(), 19);
+    asmArgs.push_back(length);
+
+    llvm::FunctionType* asmType = llvm::FunctionType::get(
+        builder->getInt64Ty(),
+        {builder->getInt64Ty(), builder->getInt64Ty(),
+         llvm::PointerType::getUnqual(*context), builder->getInt64Ty()},
+        false);
+
+    llvm::InlineAsm* inlineAsm =
+        llvm::InlineAsm::get(asmType, asmStr, constraintStr, true);
+    return builder->CreateCall(inlineAsm, asmArgs, "syscall.result");
+
+  } else if (name == "exit" && args.size() >= 1) {
+    // macOS exit syscall: 0x2000001
+
+    std::string asmStr = "syscall";
+    std::string constraintStr = "={rax},0,{rdi},~{rcx},~{r11}";
+
+    std::vector<llvm::Value*> asmArgs;
+    asmArgs.push_back(
+        llvm::ConstantInt::get(builder->getInt64Ty(), 0x2000001));  // sys_exit
+    asmArgs.push_back(args[0]);                                     // exit code
+
+    llvm::FunctionType* asmType = llvm::FunctionType::get(
+        builder->getInt64Ty(), {builder->getInt64Ty(), builder->getInt64Ty()},
+        false);
+
+    llvm::InlineAsm* inlineAsm =
+        llvm::InlineAsm::get(asmType, asmStr, constraintStr, true);
+    return builder->CreateCall(inlineAsm, asmArgs, "syscall.result");
+
+  } else if (name == "syscall" && args.size() >= 1) {
+    // Generic macOS syscall
+    std::string asmStr = "syscall";
+    std::string constraintStr = "={rax},0";
+
+    std::vector<llvm::Type*> argTypes = {builder->getInt64Ty()};
+    std::vector<llvm::Value*> asmArgs = {args[0]};  // syscall number
+
+    // Add up to 6 syscall arguments (macOS x86_64 calling convention)
+    const char* regs[] = {"{rdi}", "{rsi}", "{rdx}", "{r10}", "{r8}", "{r9}"};
+    for (size_t i = 1; i < args.size() && i <= 6; ++i) {
+      constraintStr += "," + std::string(regs[i - 1]);
+      argTypes.push_back(builder->getInt64Ty());
+      asmArgs.push_back(args[i]);
+    }
+
+    constraintStr += ",~{rcx},~{r11}";
+
+    llvm::FunctionType* asmType =
+        llvm::FunctionType::get(builder->getInt64Ty(), argTypes, false);
+    llvm::InlineAsm* inlineAsm =
+        llvm::InlineAsm::get(asmType, asmStr, constraintStr, true);
+    return builder->CreateCall(inlineAsm, asmArgs, "syscall.result");
+  }
+
+  throw std::runtime_error("Unsupported macOS syscall: " + name);
+}
+
+// Windows syscall implementation using Windows API calls
+llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
+                                             std::vector<llvm::Value*>& args) {
+  std::cout << "[CodeGen] Generating Windows syscall: " << name << std::endl;
+
+  if (name == "print" && args.size() >= 1) {
+    // Use WriteFile API as before
+    llvm::Function* writeFile = module->getFunction("WriteFile");
+    if (!writeFile) {
+      llvm::FunctionType* writeFileType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // BOOL (treated as i32)
+          {
+              llvm::PointerType::getUnqual(*context),  // HANDLE
+              llvm::PointerType::getUnqual(*context),  // LPCVOID (buffer)
+              builder->getInt32Ty(),                   // DWORD (size)
+              llvm::PointerType::getUnqual(
+                  *context),                          // LPDWORD (bytes written)
+              llvm::PointerType::getUnqual(*context)  // LPOVERLAPPED
+          },
+          false);
+      writeFile =
+          llvm::Function::Create(writeFileType, llvm::Function::ExternalLinkage,
+                                 "WriteFile", module.get());
+    }
+
+    llvm::Function* getStdHandle = module->getFunction("GetStdHandle");
+    if (!getStdHandle) {
+      llvm::FunctionType* getStdHandleType = llvm::FunctionType::get(
+          llvm::PointerType::getUnqual(*context),  // HANDLE
+          {builder->getInt32Ty()},                 // DWORD
+          false);
+      getStdHandle = llvm::Function::Create(getStdHandleType,
+                                            llvm::Function::ExternalLinkage,
+                                            "GetStdHandle", module.get());
+    }
+
+    // Get stdout handle (STD_OUTPUT_HANDLE = -11)
+    llvm::Value* stdoutHandle = builder->CreateCall(
+        getStdHandle, {builder->getInt32(-11)}, "stdout.handle");
+
+    llvm::Value* bufferSize =
+        builder->getInt32(19);  // TODO: Calculate actual length
+    llvm::Value* bytesWritten =
+        builder->CreateAlloca(builder->getInt32Ty(), nullptr, "bytes.written");
+
+    return builder->CreateCall(writeFile,
+                               {stdoutHandle, args[0], bufferSize, bytesWritten,
+                                llvm::ConstantPointerNull::get(
+                                    llvm::PointerType::getUnqual(*context))},
+                               "write.result");
+
+  } else if (name == "exit" && args.size() >= 1) {
+    // Use ExitProcess API as before
+    llvm::Function* exitProcess = module->getFunction("ExitProcess");
+    if (!exitProcess) {
+      llvm::FunctionType* exitProcessType = llvm::FunctionType::get(
+          builder->getVoidTy(), {builder->getInt32Ty()}, false);
+      exitProcess = llvm::Function::Create(exitProcessType,
+                                           llvm::Function::ExternalLinkage,
+                                           "ExitProcess", module.get());
+    }
+
+    builder->CreateCall(exitProcess, {args[0]});
+    return nullptr;
+
+  } else if (name == "syscall" && args.size() >= 1) {
+    // For Windows, we map common syscall numbers to Windows API calls
+    if (auto* const_op = llvm::dyn_cast<llvm::ConstantInt>(args[0])) {
+      int64_t op_value = const_op->getSExtValue();
+
+      if (op_value == 1 && args.size() >= 4) {
+        // Write operation - redirect to our print implementation
+        std::vector<llvm::Value*> printArgs = {args[2]};  // buffer
+        return generateWindowsSyscall("print", printArgs);
+      } else if (op_value == 60 && args.size() >= 2) {
+        // Exit operation - redirect to our exit implementation
+        std::vector<llvm::Value*> exitArgs = {args[1]};  // exit code
+        return generateWindowsSyscall("exit", exitArgs);
+      }
+    }
+
+    // Fallback: return error for unsupported syscalls
+    return llvm::ConstantInt::get(builder->getInt64Ty(), -1);
+  }
+
+  throw std::runtime_error("Unsupported Windows syscall: " + name);
 }
 
 // --- Helper: AST-Typ zu LLVM-Typ ---
@@ -739,170 +1067,46 @@ llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {
 llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
   std::cout << "[CodeGen] Generating BuiltinCallExpr: $$" << node.builtin_name
             << std::endl;
-  if (node.builtin_name == "print") {
-    // Windows-native print using WriteFile API - NO LIBC DEPENDENCY!
 
-    if (node.arguments.size() != 1) {
-      throw std::runtime_error("$$print expects exactly 1 argument");
+  // Detect target platform for cross-platform support
+  TargetPlatform platform = detectTargetPlatform();
+
+  // Generate arguments
+  std::vector<llvm::Value*> args;
+  for (auto& arg : node.arguments) {
+    llvm::Value* argValue = codegen(*arg);
+    if (!argValue) return nullptr;
+    args.push_back(argValue);
+  }
+
+  // Validate argument count for specific builtins
+  if (node.builtin_name == "print" && args.size() != 1) {
+    throw std::runtime_error("$$print expects exactly 1 argument");
+  }
+  if (node.builtin_name == "exit" && args.size() != 1) {
+    throw std::runtime_error("$$exit expects exactly 1 argument");
+  }
+  if (node.builtin_name == "syscall" && args.size() < 1) {
+    throw std::runtime_error("$$syscall expects at least 1 argument");
+  }
+
+  // Generate platform-specific code
+  try {
+    switch (platform) {
+      case TargetPlatform::Linux:
+        return generateLinuxSyscall(node.builtin_name, args);
+      case TargetPlatform::MacOS:
+        return generateMacOSSyscall(node.builtin_name, args);
+      case TargetPlatform::Windows:
+        return generateWindowsSyscall(node.builtin_name, args);
+      default:
+        throw std::runtime_error("Unsupported target platform for builtin: " +
+                                 node.builtin_name);
     }
-
-    llvm::Value* arg = codegen(*node.arguments[0]);
-    if (!arg) return nullptr;
-
-    // Only support string arguments for now (no printf formatting needed)
-    if (!arg->getType()->isPointerTy()) {
-      throw std::runtime_error(
-          "$$print currently only supports string arguments");
-    }
-
-    // Declare Windows API functions we need
-    llvm::Function* writeFile = module->getFunction("WriteFile");
-    if (!writeFile) {
-      // BOOL WriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD
-      // nNumberOfBytesToWrite,
-      //                LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED
-      //                lpOverlapped)
-      llvm::FunctionType* writeFileType = llvm::FunctionType::get(
-          builder->getInt32Ty(),  // BOOL (treated as i32)
-          {
-              llvm::PointerType::getUnqual(*context),  // HANDLE
-              llvm::PointerType::getUnqual(*context),  // LPCVOID (buffer)
-              builder->getInt32Ty(),                   // DWORD (size)
-              llvm::PointerType::getUnqual(
-                  *context),                          // LPDWORD (bytes written)
-              llvm::PointerType::getUnqual(*context)  // LPOVERLAPPED
-          },
-          false);
-      writeFile =
-          llvm::Function::Create(writeFileType, llvm::Function::ExternalLinkage,
-                                 "WriteFile", module.get());
-    }
-
-    llvm::Function* getStdHandle = module->getFunction("GetStdHandle");
-    if (!getStdHandle) {
-      // HANDLE GetStdHandle(DWORD nStdHandle)
-      llvm::FunctionType* getStdHandleType = llvm::FunctionType::get(
-          llvm::PointerType::getUnqual(*context),  // HANDLE
-          {builder->getInt32Ty()},                 // DWORD
-          false);
-      getStdHandle = llvm::Function::Create(getStdHandleType,
-                                            llvm::Function::ExternalLinkage,
-                                            "GetStdHandle", module.get());
-    }
-
-    // Get stdout handle (STD_OUTPUT_HANDLE = -11)
-    llvm::Value* stdoutHandle = builder->CreateCall(
-        getStdHandle, {builder->getInt32(-11)}, "stdout.handle");
-
-    // For string literals, we know the length. For a proper implementation,
-    // we'd need to call strlen or track string lengths in the AST
-    llvm::Value* bufferSize =
-        builder->getInt32(19);  // "Hello from builtin!" length
-
-    // Allocate space for bytesWritten (on stack)
-    llvm::Value* bytesWritten =
-        builder->CreateAlloca(builder->getInt32Ty(), nullptr, "bytes.written");
-
-    // Call WriteFile - Direct Windows API, NO LIBC!
-    llvm::Value* result = builder->CreateCall(
-        writeFile,
-        {
-            stdoutHandle,  // hFile
-            arg,           // lpBuffer (string)
-            bufferSize,    // nNumberOfBytesToWrite
-            bytesWritten,  // lpNumberOfBytesWritten
-            llvm::ConstantPointerNull::get(
-                llvm::PointerType::getUnqual(*context))  // lpOverlapped (NULL)
-        },
-        "write.result");
-
-    return result;
-  } else if (node.builtin_name == "exit") {
-    // Windows-native exit using ExitProcess API - NO LIBC DEPENDENCY!
-    llvm::Function* exitProcess = module->getFunction("ExitProcess");
-    if (!exitProcess) {
-      // void ExitProcess(UINT uExitCode)
-      llvm::FunctionType* exitProcessType =
-          llvm::FunctionType::get(builder->getVoidTy(),     // void return
-                                  {builder->getInt32Ty()},  // UINT uExitCode
-                                  false);
-      exitProcess = llvm::Function::Create(exitProcessType,
-                                           llvm::Function::ExternalLinkage,
-                                           "ExitProcess", module.get());
-    }
-
-    if (node.arguments.size() != 1) {
-      throw std::runtime_error("$$exit expects exactly 1 argument");
-    }
-
-    llvm::Value* exit_code = codegen(*node.arguments[0]);
-    if (!exit_code) return nullptr;
-
-    builder->CreateCall(exitProcess, {exit_code});
-    return nullptr;  // exit never returns
-  } else if (node.builtin_name == "syscall") {
-    // Windows syscall implementation
-    // Windows doesn't have simple syscalls like Linux
-    // Instead, we'll implement specific Windows API calls based on operation
-    // type
-
-    if (node.arguments.size() < 1) {
-      throw std::runtime_error(
-          "$$syscall expects at least 1 argument (operation type)");
-    }
-
-    // For Windows, we'll map common operations to Windows API calls:
-    // $$syscall(1, handle, buffer, size) -> WriteFile
-    // $$syscall(60, exit_code) -> ExitProcess
-
-    // For now, let's implement a basic Windows write operation
-    // This is a simplified approach - in a real implementation you'd want
-    // to use proper Windows API bindings
-
-    llvm::Value* op_code = codegen(*node.arguments[0]);
-    if (!op_code) return nullptr;
-
-    // Check if it's a constant operation we recognize
-    if (auto* const_op = llvm::dyn_cast<llvm::ConstantInt>(op_code)) {
-      int64_t op_value = const_op->getSExtValue();
-
-      if (op_value == 1 && node.arguments.size() >= 4) {
-        // Write operation - map to printf for now (later we'd use WriteFile)
-        std::cout << "[CodeGen] Windows write syscall - using printf fallback"
-                  << std::endl;
-
-        // For demonstration, just return success
-        return llvm::ConstantInt::get(builder->getInt64Ty(), 0);
-
-      } else if (op_value == 60 && node.arguments.size() >= 2) {
-        // Exit operation - map to exit()
-        std::cout << "[CodeGen] Windows exit syscall - using exit() fallback"
-                  << std::endl;
-
-        llvm::Function* exit_func = module->getFunction("exit");
-        if (!exit_func) {
-          llvm::FunctionType* exit_type = llvm::FunctionType::get(
-              builder->getVoidTy(), {builder->getInt32Ty()}, false);
-          exit_func = llvm::Function::Create(
-              exit_type, llvm::Function::ExternalLinkage, "exit", module.get());
-        }
-
-        llvm::Value* exit_code = codegen(*node.arguments[1]);
-        if (!exit_code) return nullptr;
-
-        builder->CreateCall(exit_func, {exit_code});
-        return llvm::ConstantInt::get(builder->getInt64Ty(), 0);
-      }
-    }
-
-    // Fallback for unrecognized syscalls
-    std::cout << "[CodeGen] Unknown Windows syscall operation - returning error"
-              << std::endl;
-    return llvm::ConstantInt::get(builder->getInt64Ty(), -1);
-
-  } else {
-    throw std::runtime_error("Unknown builtin function: $$" +
-                             node.builtin_name);
+  } catch (const std::exception& e) {
+    std::cout << "[CodeGen] Error generating builtin $$" << node.builtin_name
+              << ": " << e.what() << std::endl;
+    throw;
   }
 }
 
@@ -923,9 +1127,37 @@ bool CodeGen::initializeLLVMTargets() {
 bool CodeGen::compileToObjectFile(const std::string& filename) const {
   std::cout << "[CodeGen] Compiling to object file: " << filename << std::endl;
 
-  // Get the target triple for the current system  // Use Windows x64 target
-  // triple for now
-  std::string targetTripleStr = "x86_64-pc-windows-msvc";
+  // Get target triple based on platform
+  std::string targetTripleStr;
+  TargetPlatform platform = detectTargetPlatform();
+
+  switch (platform) {
+    case TargetPlatform::Windows:
+      targetTripleStr = "x86_64-pc-windows-msvc";
+      break;
+    case TargetPlatform::Linux:
+      targetTripleStr = "x86_64-pc-linux-gnu";
+      break;
+    case TargetPlatform::MacOS:
+      targetTripleStr = "x86_64-apple-darwin";
+      break;
+    default:
+      // Fallback to platform-specific defaults
+#ifdef _WIN32
+      targetTripleStr = "x86_64-pc-windows-msvc";
+#elif defined(__linux__)
+      targetTripleStr = "x86_64-pc-linux-gnu";
+#elif defined(__APPLE__)
+      targetTripleStr = "x86_64-apple-darwin";
+#else
+      targetTripleStr = "x86_64-unknown-unknown";
+#endif
+      break;
+  }
+
+  std::cout << "[CodeGen] Using target triple: " << targetTripleStr
+            << std::endl;
+
   llvm::Triple targetTriple(targetTripleStr);
   module->setTargetTriple(targetTriple);
   std::string error;
@@ -974,18 +1206,36 @@ bool CodeGen::compileToExecutable(const std::string& objectFilename,
                                   const std::string& executableFilename) const {
   std::cout << "[CodeGen] Linking object file to executable..." << std::endl;
 
-  // Use system linker (could be ld, link.exe, etc.)
+  // Detect platform for cross-platform linking
+  TargetPlatform platform = detectTargetPlatform();
   std::string linkCmd;
 
-#ifdef _WIN32
-  // Windows: Use clang with no libc, link only to kernel32.dll for Windows API
-  linkCmd = "clang \"" + objectFilename + "\" -o \"" + executableFilename +
-            "\" -nostdlib -lkernel32";
-#else
-  // Unix/Linux: Use ld or clang
-  linkCmd =
-      "clang \"" + objectFilename + "\" -o \"" + executableFilename + "\"";
-#endif
+  switch (platform) {
+    case TargetPlatform::Windows:
+      // Windows: Use clang with no libc, link only to kernel32.dll for Windows
+      // API
+      linkCmd = "clang \"" + objectFilename + "\" -o \"" + executableFilename +
+                "\" -nostdlib -lkernel32";
+      break;
+
+    case TargetPlatform::Linux:
+      // Linux: Use clang with no libc, link for Linux syscalls
+      linkCmd = "clang \"" + objectFilename + "\" -o \"" + executableFilename +
+                "\" -nostdlib -static";
+      break;
+
+    case TargetPlatform::MacOS:
+      // macOS: Use clang with no libc, link for macOS syscalls
+      linkCmd = "clang \"" + objectFilename + "\" -o \"" + executableFilename +
+                "\" -nostdlib -static";
+      break;
+
+    default:
+      // Fallback: Use standard linking
+      linkCmd =
+          "clang \"" + objectFilename + "\" -o \"" + executableFilename + "\"";
+      break;
+  }
 
   std::cout << "[CodeGen] Running linker: " << linkCmd << std::endl;
 

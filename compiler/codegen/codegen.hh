@@ -20,6 +20,9 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Triple.h"
 
+// Platform detection and syscall support
+enum class TargetPlatform { Windows, Linux, MacOS, Unknown };
+
 // Forward-Deklarationen
 class StmtNode;  // Wir arbeiten mit der Basisklasse für Statements
 class ASTNode;
@@ -91,4 +94,13 @@ class CodeGen {
 
   // Generate Windows entry point for freestanding executables
   void generateEntryPoint();
+
+  // Cross-platform syscall support
+  TargetPlatform detectTargetPlatform() const;
+  llvm::Value* generateLinuxSyscall(const std::string& name,
+                                    std::vector<llvm::Value*>& args);
+  llvm::Value* generateMacOSSyscall(const std::string& name,
+                                    std::vector<llvm::Value*>& args);
+  llvm::Value* generateWindowsSyscall(const std::string& name,
+                                      std::vector<llvm::Value*>& args);
 };
