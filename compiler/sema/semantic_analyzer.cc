@@ -829,8 +829,9 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(SliceTypeNode& node) {
   if (node.element_type) {
     node.element_type->accept(*this);
   }
-  // Slice types are always valid at compile time
-  return nullptr;
+  // Return a clone of the slice type
+  return std::make_unique<SliceTypeNode>(node.location,
+                                         cloneType(node.element_type.get()));
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ReferenceExpr& node) {

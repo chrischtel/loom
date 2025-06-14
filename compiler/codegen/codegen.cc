@@ -496,20 +496,36 @@ llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
             "write.newline.result");
         return result1;
       } else {
-        // For runtime integers, we need a more complex conversion
-        // For now, just print a placeholder
-        llvm::Constant* placeholderStr =
-            builder->CreateGlobalString("<integer>", "placeholder");
-        llvm::Value* placeholderPtr = builder->CreatePointerCast(
-            placeholderStr, llvm::PointerType::getUnqual(*context));
+        // For runtime integers, we convert WITHOUT using libc (no sprintf)
+        // Simple approach: print single digit (0-9) for now
+        std::cout << "[CodeGen] Converting runtime integer to string (no libc)"
+                  << std::endl;
 
-        llvm::Value* strSize = builder->getInt32(9);  // length of "<integer>"
+        // For simplicity, we'll handle single digits (0-9) and print <num> for
+        // others This keeps us libc-independent while still being functional
+
+        // Get the last digit: value % 10
+        llvm::Value* digit =
+            builder->CreateURem(intValue, builder->getInt32(10), "digit");
+
+        // Convert digit to ASCII: digit + '0' (48)
+        llvm::Value* digit_i8 =
+            builder->CreateTrunc(digit, builder->getInt8Ty(), "digit_i8");
+        llvm::Value* ascii_digit =
+            builder->CreateAdd(digit_i8, builder->getInt8(48), "ascii_digit");
+
+        // Create a single-character buffer
+        llvm::Value* digit_alloca =
+            builder->CreateAlloca(builder->getInt8Ty(), nullptr, "digit_char");
+        builder->CreateStore(ascii_digit, digit_alloca);
+
+        // Write the single digit
         llvm::Value* bytesWritten = builder->CreateAlloca(
             builder->getInt32Ty(), nullptr, "bytes.written");
 
         llvm::Value* result1 = builder->CreateCall(
             writeFile,
-            {stdoutHandle, placeholderPtr, strSize, bytesWritten,
+            {stdoutHandle, digit_alloca, builder->getInt32(1), bytesWritten,
              llvm::ConstantPointerNull::get(
                  llvm::PointerType::getUnqual(*context))},
             "write.result");
@@ -529,6 +545,7 @@ llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
              llvm::ConstantPointerNull::get(
                  llvm::PointerType::getUnqual(*context))},
             "write.newline.result");
+
         return result1;
       }
     } else {
@@ -1668,11 +1685,19 @@ llvm::Value* CodeGen::codegen(FunctionCallExpr& node) {
     throw std::runtime_error("Argument count mismatch for function: " +
                              node.function_name);
   }
-
   // Create function call
   std::cout << "[CodeGen] Creating call to function: " << node.function_name
             << " with " << args.size() << " arguments" << std::endl;
-  return builder->CreateCall(target_func, args, node.function_name + ".call");
+
+  // Check if function returns void
+  if (target_func->getReturnType()->isVoidTy()) {
+    // For void functions, don't assign a name to the call result
+    builder->CreateCall(target_func, args);
+    return nullptr;  // Void functions don't return a value
+  } else {
+    // For non-void functions, assign a name to the call result
+    return builder->CreateCall(target_func, args, node.function_name + ".call");
+  }
 }
 
 llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
@@ -2217,29 +2242,58 @@ llvm::Value* CodeGen::codegen(ArrayLiteralExpr& node) {
         array_type, array_alloca, indices, "elem.ptr");
     builder->CreateStore(element_val, element_ptr);
   }
-
-  // Return pointer to first element (decay to pointer)
+  // Create slice struct { ptr, len }
+  // Get pointer to first element
   std::vector<llvm::Value*> indices = {builder->getInt32(0),
                                        builder->getInt32(0)};
-  return builder->CreateInBoundsGEP(array_type, array_alloca, indices,
-                                    "array.decay");
+  llvm::Value* array_ptr = builder->CreateInBoundsGEP(array_type, array_alloca,
+                                                      indices, "array.ptr");
+
+  // Create slice struct type
+  std::vector<llvm::Type*> slice_fields = {
+      llvm::PointerType::getUnqual(*context),  // data pointer
+      builder->getInt64Ty()                    // length
+  };
+  llvm::Type* slice_type = llvm::StructType::get(*context, slice_fields);
+
+  // Allocate slice struct on stack
+  llvm::Value* slice_alloca =
+      builder->CreateAlloca(slice_type, nullptr, "slice.tmp");
+
+  // Store pointer field (index 0)
+  llvm::Value* ptr_field =
+      builder->CreateStructGEP(slice_type, slice_alloca, 0, "slice.ptr.field");
+  builder->CreateStore(array_ptr, ptr_field);
+
+  // Store length field (index 1)
+  llvm::Value* len_field =
+      builder->CreateStructGEP(slice_type, slice_alloca, 1, "slice.len.field");
+  llvm::Value* length = builder->getInt64(node.elements.size());
+  builder->CreateStore(length, len_field);
+
+  // Load and return the slice struct
+  return builder->CreateLoad(slice_type, slice_alloca, "slice.val");
 }
 
 llvm::Value* CodeGen::codegen(IndexExpr& node) {
   std::cout << "[CodeGen] Generating IndexExpr" << std::endl;
 
-  // Generate array expression
-  llvm::Value* array = codegen(*node.array);
-  if (!array) return nullptr;
+  // Generate array expression (should be a slice struct)
+  llvm::Value* slice_val = codegen(*node.array);
+  if (!slice_val) return nullptr;
 
   // Generate index expression
   llvm::Value* index = codegen(*node.index);
   if (!index) return nullptr;
 
-  // For now, assume the array is a pointer to the first element
-  // Calculate element address: array + index
+  // The slice should be a struct { ptr, len }
+  // Extract the pointer field (index 0) from the slice struct value
+  llvm::Value* array_ptr =
+      builder->CreateExtractValue(slice_val, 0, "array.ptr");
+
+  // Calculate element address: array_ptr + index
   llvm::Value* element_ptr = builder->CreateInBoundsGEP(
-      builder->getInt32Ty(), array, index, "elem.ptr");
+      builder->getInt32Ty(), array_ptr, index, "elem.ptr");
 
   // Load the element value
   return builder->CreateLoad(builder->getInt32Ty(), element_ptr, "elem.val");
