@@ -80,49 +80,56 @@ int main(int argc, char* argv[]) {
     if (!sema.hasError()) {
       std::cout << "Semantic analysis successful!"
                 << std::endl;  // --- PHASE 4: CODE GENERATION (NEU) ---
-      std::cout << std::endl << "--- Running Code Generator ---" << std::endl;
-      CodeGen code_generator;
-      code_generator.generate(ast);
+                               // std::cout << std::endl << "--- Running Code
+                               // Generator ---" << std::endl;
+      try {
+        std::cout << "Creating CodeGen instance..." << std::endl;
+        CodeGen code_generator;
+        std::cout << "Running code generation..." << std::endl;
+        code_generator.generate(ast);
 
-      std::cout << "--- Generated LLVM IR ---" << std::endl;
-      code_generator.print_ir();
-      std::cout << "-------------------------"
-                << std::endl;  // --- PHASE 5: COMPILE TO EXECUTABLE (INTEGRATED
-                               // LLVM APPROACH) ---
-      std::cout << std::endl << "--- Compiling to Executable ---" << std::endl;
+        std::cout << "--- Generated LLVM IR ---" << std::endl;
+        code_generator.print_ir();
+        std::cout << "-------------------------"
+                  << std::endl;  // --- PHASE 5: COMPILE TO EXECUTABLE
+                                 // (INTEGRATED LLVM APPROACH) ---
+        std::cout << std::endl
+                  << "--- Compiling to Executable ---" << std::endl;
 
-      // Generate output filename (replace .loom with .exe)
-      std::string output_name = filename;
-      size_t last_dot = output_name.find_last_of('.');
-      if (last_dot != std::string::npos) {
-        output_name = output_name.substr(0, last_dot);
-      }
-      output_name += ".exe";
+        // Generate output filename (replace .loom with .exe)
+        std::string output_name = filename;
+        size_t last_dot = output_name.find_last_of('.');
+        if (last_dot != std::string::npos) {
+          output_name = output_name.substr(0, last_dot);
+        }
+        output_name += ".exe";
 
-      // Initialize LLVM targets for object file generation
-      if (!code_generator.initializeLLVMTargets()) {
-        std::cerr << "Error: Failed to initialize LLVM targets" << std::endl;
+        // Initialize LLVM targets for object file generation
+        if (!code_generator.initializeLLVMTargets()) {
+          std::cerr << "Error: Failed to initialize LLVM targets" << std::endl;
+          return 1;
+        }
+
+        // Generate object file directly using LLVM
+        std::string object_filename = output_name + ".o";
+        if (!code_generator.compileToObjectFile(object_filename)) {
+          std::cerr << "Error: Failed to generate object file" << std::endl;
+          return 1;
+        }
+
+        // Link object file to executable
+        if (!code_generator.compileToExecutable(object_filename, output_name)) {
+          std::cerr << "Error: Failed to link executable" << std::endl;
+          return 1;
+        }  // Clean up object file
+        std::filesystem::remove(object_filename);
+        std::cout << "Cleaned up temporary object file." << std::endl;
+
+        std::cout << "Successfully compiled to: " << output_name << std::endl;
+      } catch (const std::exception& e) {
+        std::cerr << "Error during code generation: " << e.what() << std::endl;
         return 1;
       }
-
-      // Generate object file directly using LLVM
-      std::string object_filename = output_name + ".o";
-      if (!code_generator.compileToObjectFile(object_filename)) {
-        std::cerr << "Error: Failed to generate object file" << std::endl;
-        return 1;
-      }
-
-      // Link object file to executable
-      if (!code_generator.compileToExecutable(object_filename, output_name)) {
-        std::cerr << "Error: Failed to link executable" << std::endl;
-        return 1;
-      }
-
-      // Clean up object file
-      std::filesystem::remove(object_filename);
-      std::cout << "Cleaned up temporary object file." << std::endl;
-
-      std::cout << "Successfully compiled to: " << output_name << std::endl;
     } else {
       std::cout << "Semantic analysis failed!" << std::endl;
       return 1;  // Exit with error code when semantic analysis fails

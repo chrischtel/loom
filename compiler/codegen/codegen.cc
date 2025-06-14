@@ -19,6 +19,10 @@ CodeGen::CodeGen() {
   module = std::make_unique<llvm::Module>("MyLoomModule", *context);
   builder = std::make_unique<llvm::IRBuilder<>>(*context);
   current_function = nullptr;
+
+  // Initialize the syscall framework
+  syscallFramework = std::make_unique<loom::SyscallFramework>(
+      context.get(), builder.get(), module.get());
 }
 
 void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
@@ -1229,6 +1233,10 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
   if (auto* n = dynamic_cast<StringLiteral*>(&node)) {
     std::cout << "[CodeGen] Processing StringLiteral" << std::endl;
     return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<BooleanLiteral*>(&node)) {
+    std::cout << "[CodeGen] Processing BooleanLiteral" << std::endl;
+    return codegen(*n);
   }  // Memory model nodes
   if (auto* n = dynamic_cast<ReferenceExpr*>(&node)) {
     std::cout << "[CodeGen] Processing ReferenceExpr" << std::endl;
@@ -1308,9 +1316,16 @@ llvm::Value* CodeGen::codegen(StringLiteral& node) {
 
   llvm::Value* strPtr = builder->CreateInBoundsGEP(
       strConstant->getType(), globalStr, indices, "str.ptr");
-
   std::cout << "[CodeGen] String constant created successfully" << std::endl;
   return strPtr;
+}
+
+llvm::Value* CodeGen::codegen(BooleanLiteral& node) {
+  std::cout << "[CodeGen] Generating BooleanLiteral: "
+            << (node.value ? "true" : "false") << std::endl;
+
+  // Create a boolean constant (i1 type in LLVM)
+  return llvm::ConstantInt::get(builder->getInt1Ty(), node.value ? 1 : 0);
 }
 
 // --- Codegen für Statements ---
@@ -1704,9 +1719,6 @@ llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
   std::cout << "[CodeGen] Generating BuiltinCallExpr: $$" << node.builtin_name
             << std::endl;
 
-  // Detect target platform for cross-platform support
-  TargetPlatform platform = detectTargetPlatform();
-
   // Generate arguments
   std::vector<llvm::Value*> args;
   for (auto& arg : node.arguments) {
@@ -1714,33 +1726,100 @@ llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
     if (!argValue) return nullptr;
     args.push_back(argValue);
   }
-  // Validate argument count for specific builtins
-  if (node.builtin_name == "print" && args.size() != 1) {
-    throw std::runtime_error("$$print expects exactly 1 argument");
-  }
-  if (node.builtin_name == "print_addr" && args.size() != 1) {
-    throw std::runtime_error("$$print_addr expects exactly 1 argument");
-  }
-  if (node.builtin_name == "exit" && args.size() != 1) {
-    throw std::runtime_error("$$exit expects exactly 1 argument");
-  }
-  if (node.builtin_name == "syscall" && args.size() < 1) {
-    throw std::runtime_error("$$syscall expects at least 1 argument");
-  }
 
-  // Generate platform-specific code
   try {
-    switch (platform) {
-      case TargetPlatform::Linux:
-        return generateLinuxSyscall(node.builtin_name, args);
-      case TargetPlatform::MacOS:
-        return generateMacOSSyscall(node.builtin_name, args);
-      case TargetPlatform::Windows:
-        return generateWindowsSyscall(node.builtin_name, args);
-      default:
-        throw std::runtime_error("Unsupported target platform for builtin: " +
-                                 node.builtin_name);
+    // Use the new syscall framework for all builtin calls
+    if (node.builtin_name == "print") {
+      if (args.size() != 1) {
+        throw std::runtime_error("$$print expects exactly 1 argument");
+      }  // Determine the data type of the argument
+      llvm::Type* argType = args[0]->getType();
+      loom::DataType dataType = loom::DataType::STRING;  // default
+
+      if (argType->isIntegerTy(1)) {
+        // Boolean type (i1) - check this first before general integer check
+        return syscallFramework->printBoolean(args[0]);
+      } else if (argType->isIntegerTy()) {
+        if (argType->isIntegerTy(8))
+          dataType = loom::DataType::INT8;
+        else if (argType->isIntegerTy(16))
+          dataType = loom::DataType::INT16;
+        else if (argType->isIntegerTy(32))
+          dataType = loom::DataType::INT32;
+        else if (argType->isIntegerTy(64))
+          dataType = loom::DataType::INT64;
+        else
+          dataType = loom::DataType::INT32;  // fallback
+
+        return syscallFramework->printInteger(args[0], dataType);
+      } else if (argType->isFloatTy() || argType->isDoubleTy()) {
+        dataType = argType->isFloatTy() ? loom::DataType::FLOAT32
+                                        : loom::DataType::FLOAT64;
+        return syscallFramework->printFloat(args[0], dataType);
+      } else if (argType->isPointerTy()) {
+        // Check if it's a string (pointer to i8) or other pointer
+        // Note: LLVM opaque pointers - assume string for now
+        return syscallFramework->printString(args[0]);
+      } else {
+        throw std::runtime_error("Unsupported type for $$print");
+      }
+
+    } else if (node.builtin_name == "print_addr") {
+      if (args.size() != 1) {
+        throw std::runtime_error("$$print_addr expects exactly 1 argument");
+      }
+      return syscallFramework->printPointer(args[0]);
+
+    } else if (node.builtin_name == "exit") {
+      if (args.size() != 1) {
+        throw std::runtime_error("$$exit expects exactly 1 argument");
+      }
+      return syscallFramework->generateSyscall(loom::SyscallType::EXIT, args);
+
+    } else if (node.builtin_name == "syscall") {
+      if (args.size() < 1) {
+        throw std::runtime_error("$$syscall expects at least 1 argument");
+      }
+
+      // Generic syscall - first argument is syscall number
+      if (auto* constOp = llvm::dyn_cast<llvm::ConstantInt>(args[0])) {
+        int64_t syscallNum = constOp->getSExtValue();
+        std::vector<llvm::Value*> syscallArgs(args.begin() + 1, args.end());
+
+        // Map common syscall numbers to typed calls
+        switch (syscallNum) {
+          case 1:  // write
+            if (syscallArgs.size() >= 3) {
+              return syscallFramework->generateSyscall(loom::SyscallType::WRITE,
+                                                       syscallArgs);
+            }
+            break;
+          case 0:  // read
+            if (syscallArgs.size() >= 3) {
+              return syscallFramework->generateSyscall(loom::SyscallType::READ,
+                                                       syscallArgs);
+            }
+            break;
+          case 60:         // exit (Linux)
+          case 0x2000001:  // exit (macOS)
+            if (!syscallArgs.empty()) {
+              return syscallFramework->generateSyscall(loom::SyscallType::EXIT,
+                                                       syscallArgs);
+            }
+            break;
+          default:
+            return syscallFramework->generateSyscall(loom::SyscallType::GENERIC,
+                                                     args);
+        }
+      }
+      return syscallFramework->generateSyscall(loom::SyscallType::GENERIC,
+                                               args);
+
+    } else {
+      throw std::runtime_error("Unknown builtin function: $$" +
+                               node.builtin_name);
     }
+
   } catch (const std::exception& e) {
     std::cout << "[CodeGen] Error generating builtin $$" << node.builtin_name
               << ": " << e.what() << std::endl;

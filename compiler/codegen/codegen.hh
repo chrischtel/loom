@@ -7,6 +7,7 @@
 #include <vector>  // Hinzufügen
 
 // LLVM-Header
+#include "../syscalls/syscall_framework.hh"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -28,6 +29,7 @@ class StmtNode;  // Wir arbeiten mit der Basisklasse für Statements
 class ASTNode;
 class NumberLiteral;
 class StringLiteral;
+class BooleanLiteral;
 class VarDeclNode;
 class IfStmtNode;
 class WhileStmtNode;
@@ -73,13 +75,13 @@ class CodeGen {
                            const std::string& executableFilename) const;
   // Initialize LLVM targets (call once at startup)
   bool initializeLLVMTargets();
-
   // Public access to LLVM module for external compilation
   std::unique_ptr<llvm::Module> module;
 
  private:
   std::unique_ptr<llvm::LLVMContext> context;
   std::unique_ptr<llvm::IRBuilder<>> builder;
+  std::unique_ptr<loom::SyscallFramework> syscallFramework;
   std::map<std::string, llvm::Value*> named_values;
   std::map<std::string, llvm::Type*>
       variable_types;                // Track types for opaque pointers
@@ -88,6 +90,7 @@ class CodeGen {
   llvm::Value* codegen(ASTNode& node);
   llvm::Value* codegen(NumberLiteral& node);
   llvm::Value* codegen(StringLiteral& node);
+  llvm::Value* codegen(BooleanLiteral& node);
   llvm::Value* codegen(VarDeclNode& node);
   llvm::Value* codegen(IfStmtNode& node);
   llvm::Value* codegen(WhileStmtNode& node);
