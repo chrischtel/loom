@@ -31,6 +31,7 @@ class Parser {
   std::unique_ptr<StmtNode> parseVarDeclaration(VarDeclKind kind);
   std::unique_ptr<StmtNode> parseIfStatement();
   std::unique_ptr<StmtNode> parseWhileStatement();
+  std::unique_ptr<StmtNode> parseForStatement();
   std::unique_ptr<StmtNode> parseFunctionDeclaration();
   std::unique_ptr<StmtNode> parseReturnStatement();
   std::unique_ptr<StmtNode> parseDeferStatement();
@@ -45,8 +46,11 @@ class Parser {
   std::unique_ptr<ExprNode> parseFactor();
   std::unique_ptr<ExprNode> parseUnary();
   std::unique_ptr<ExprNode> parseCall();
+  std::unique_ptr<ExprNode> parsePostfix();
   std::unique_ptr<ExprNode> parsePrimary();
   std::unique_ptr<ExprNode> parseBuiltinCall();
+  std::unique_ptr<ExprNode> parseArrayLiteral();
+  std::unique_ptr<ExprNode> parseRange();
   std::unique_ptr<ExprNode> finishCall(std::unique_ptr<ExprNode> callee);
   std::unique_ptr<TypeNode> parseType();
 

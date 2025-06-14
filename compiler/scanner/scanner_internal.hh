@@ -31,12 +31,15 @@ enum class TokenType {
   TOKEN_BANG,
 
   // Memory operators
-  TOKEN_AMPERSAND,  // & (reference)
-  TOKEN_HAT,        // ^ (owned pointer)
-  TOKEN_QUESTION,   // ? (nullable)
-  TOKEN_ARROW,      // -> (pointer access)
-  TOKEN_DOT,        // . (member access)
-  TOKEN_DOT_DOT,    // .. (slice range)
+  TOKEN_AMPERSAND,      // & (reference)
+  TOKEN_HAT,            // ^ (owned pointer)
+  TOKEN_QUESTION,       // ? (nullable)
+  TOKEN_ARROW,          // -> (pointer access)
+  TOKEN_DOT,            // . (member access)
+  TOKEN_DOT_DOT,        // .. (slice range)
+  TOKEN_DOT_DOT_EQUAL,  // ..= (inclusive range)
+  TOKEN_AT,             // @ (array literal prefix)
+  TOKEN_IN,             // in (for loop iterator)
 
   // Literals
   TOKEN_NUMBER_INT,
@@ -56,6 +59,7 @@ enum class TokenType {
   TOKEN_KEYWORD_TRUE,
   TOKEN_KEYWORD_FALSE,
   TOKEN_KEYWORD_WHILE,
+  TOKEN_KEYWORD_FOR,  // for loop
   TOKEN_KEYWORD_RETURN,
   TOKEN_KEYWORD_DEFER,   // defer statement
   TOKEN_KEYWORD_UNSAFE,  // unsafe block

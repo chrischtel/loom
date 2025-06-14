@@ -31,6 +31,7 @@ class StringLiteral;
 class VarDeclNode;
 class IfStmtNode;
 class WhileStmtNode;
+class ForStmtNode;
 class ExprStmtNode;
 class AssignmentExpr;
 class FunctionCallExpr;
@@ -46,6 +47,9 @@ class Identifier;
 // Memory model forward declarations
 class ReferenceExpr;
 class DereferenceExpr;
+class ArrayLiteralExpr;
+class IndexExpr;
+class RangeExpr;
 class ReferenceTypeNode;
 class OwnedPointerTypeNode;
 class NullableTypeNode;
@@ -87,6 +91,7 @@ class CodeGen {
   llvm::Value* codegen(VarDeclNode& node);
   llvm::Value* codegen(IfStmtNode& node);
   llvm::Value* codegen(WhileStmtNode& node);
+  llvm::Value* codegen(ForStmtNode& node);
   llvm::Value* codegen(ExprStmtNode& node);
   llvm::Value* codegen(AssignmentExpr& node);
   llvm::Value* codegen(FunctionCallExpr& node);
@@ -97,6 +102,9 @@ class CodeGen {
   llvm::Value* codegen(Identifier& node);  // Memory model code generation
   llvm::Value* codegen(ReferenceExpr& node);
   llvm::Value* codegen(DereferenceExpr& node);
+  llvm::Value* codegen(ArrayLiteralExpr& node);
+  llvm::Value* codegen(IndexExpr& node);
+  llvm::Value* codegen(RangeExpr& node);
   llvm::Type* typeToLLVMType(TypeNode& type);
 
   // Generate code for a node with a specific target type (for type casting)

@@ -21,6 +21,7 @@ class VarDeclNode;
 class ExprStmtNode;
 class IfStmtNode;
 class WhileStmtNode;
+class ForStmtNode;
 class FunctionCallExpr;
 class BuiltinCallExpr;
 class TypeNode;
@@ -45,6 +46,9 @@ class DereferenceExpr;
 class MemberAccessExpr;
 class PointerAccessExpr;
 class SliceExpr;
+class ArrayLiteralExpr;
+class IndexExpr;
+class RangeExpr;
 class DeferStmtNode;
 class UnsafeBlockExpr;
 class ASTVisitor {
@@ -64,6 +68,7 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(ExprStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IfStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(WhileStmtNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(ForStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FunctionCallExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(BuiltinCallExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(TypeNode& node) = 0;
@@ -85,6 +90,9 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(MemberAccessExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(PointerAccessExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(SliceExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(ArrayLiteralExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(IndexExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(RangeExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(DeferStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(UnsafeBlockExpr& node) = 0;
 };
@@ -767,6 +775,37 @@ class WhileStmtNode : public StmtNode {
     result += "])";
     return result;
   }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// For statement: for(var in range)
+class ForStmtNode : public StmtNode {
+ public:
+  std::string variable_name;           // loop variable name
+  std::unique_ptr<ExprNode> iterable;  // range or array to iterate over
+  std::vector<std::unique_ptr<StmtNode>> body;
+
+  ForStmtNode(const LoomSourceLocation& loc, const std::string& var_name,
+              std::unique_ptr<ExprNode> iter,
+              std::vector<std::unique_ptr<StmtNode>> stmts)
+      : StmtNode(loc),
+        variable_name(var_name),
+        iterable(std::move(iter)),
+        body(std::move(stmts)) {}
+
+  std::string toString() const override {
+    std::string result = "ForStmt(" + variable_name + " in ";
+    result += iterable ? iterable->toString() : "null";
+    result += ", body: [";
+    for (size_t i = 0; i < body.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += body[i] ? body[i]->toString() : "null";
+    }
+    result += "])";
+    return result;
+  }
 
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
     return visitor.visit(*this);
@@ -936,6 +975,73 @@ class SliceExpr : public ExprNode {
     return (array ? array->toString() : "null") + "[" +
            (start ? start->toString() : "") + ".." +
            (end ? end->toString() : "") + "]";
+  }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Array literal expression: @[1, 2, 3]
+class ArrayLiteralExpr : public ExprNode {
+ public:
+  std::vector<std::unique_ptr<ExprNode>> elements;
+
+  ArrayLiteralExpr(const LoomSourceLocation& loc,
+                   std::vector<std::unique_ptr<ExprNode>> elems)
+      : ExprNode(loc), elements(std::move(elems)) {}
+
+  std::string toString() const override {
+    std::string result = "@[";
+    for (size_t i = 0; i < elements.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += elements[i] ? elements[i]->toString() : "null";
+    }
+    result += "]";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Index expression: arr@[index]
+class IndexExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> array;
+  std::unique_ptr<ExprNode> index;
+
+  IndexExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> arr,
+            std::unique_ptr<ExprNode> idx)
+      : ExprNode(loc), array(std::move(arr)), index(std::move(idx)) {}
+
+  std::string toString() const override {
+    return (array ? array->toString() : "null") + "@[" +
+           (index ? index->toString() : "null") + "]";
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Range expression: start..end or start..=end
+class RangeExpr : public ExprNode {
+ public:
+  std::unique_ptr<ExprNode> start;
+  std::unique_ptr<ExprNode> end;
+  bool inclusive;  // true for ..=, false for ..
+
+  RangeExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> s,
+            std::unique_ptr<ExprNode> e, bool incl)
+      : ExprNode(loc),
+        start(std::move(s)),
+        end(std::move(e)),
+        inclusive(incl) {}
+
+  std::string toString() const override {
+    return (start ? start->toString() : "null") + (inclusive ? "..=" : "..") +
+           (end ? end->toString() : "null");
   }
 
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {

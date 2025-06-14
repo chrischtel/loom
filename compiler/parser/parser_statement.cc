@@ -22,6 +22,7 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
     if (match(TokenType::TOKEN_KEYWORD_FUNC)) return parseFunctionDeclaration();
     if (match(TokenType::TOKEN_KEYWORD_IF)) return parseIfStatement();
     if (match(TokenType::TOKEN_KEYWORD_WHILE)) return parseWhileStatement();
+    if (match(TokenType::TOKEN_KEYWORD_FOR)) return parseForStatement();
     if (match(TokenType::TOKEN_KEYWORD_RETURN)) return parseReturnStatement();
     if (match(TokenType::TOKEN_KEYWORD_DEFER)) return parseDeferStatement();
     if (match(TokenType::TOKEN_KEYWORD_UNSAFE)) return parseUnsafeBlock();
@@ -224,4 +225,39 @@ std::unique_ptr<StmtNode> Parser::parseUnsafeBlock() {
   auto unsafe_expr =
       std::make_unique<UnsafeBlockExpr>(unsafe_loc, std::move(statements));
   return std::make_unique<ExprStmtNode>(unsafe_loc, std::move(unsafe_expr));
+}
+
+// Parse for statement: for(var in iterable) { body }
+std::unique_ptr<StmtNode> Parser::parseForStatement() {
+  LoomSourceLocation for_loc = previous().location;
+
+  consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'for'");
+
+  // Parse loop variable
+  consume(TokenType::TOKEN_IDENTIFIER, "Expected variable name in for loop");
+  std::string var_name = previous().value;
+
+  consume(TokenType::TOKEN_IN, "Expected 'in' after for loop variable");
+
+  // Parse iterable expression (range or array)
+  std::unique_ptr<ExprNode> iterable = parseExpression();
+
+  consume(TokenType::TOKEN_RIGHT_PAREN,
+          "Expected ')' after for loop condition");
+
+  consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' before for loop body");
+
+  // Parse body statements
+  std::vector<std::unique_ptr<StmtNode>> body;
+  while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+    auto stmt = parseDeclaration();
+    if (stmt) {
+      body.push_back(std::move(stmt));
+    }
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after for loop body");
+
+  return std::make_unique<ForStmtNode>(for_loc, var_name, std::move(iterable),
+                                       std::move(body));
 }

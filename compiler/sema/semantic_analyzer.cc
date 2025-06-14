@@ -443,6 +443,40 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(WhileStmtNode& node) {
   return nullptr;
 }
 
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ForStmtNode& node) {
+  // Analyze the iterable expression (range or array)
+  if (node.iterable) {
+    std::unique_ptr<TypeNode> iterable_type = node.iterable->accept(*this);
+
+    // For now, we only support ranges and arrays
+    // TODO: Add proper type checking for iterables
+    if (iterable_type) {
+      // Type analysis successful
+    }
+  }
+
+  // Create a new scope for the loop variable
+  symbols.enterScope();
+
+  // Add the loop variable to the scope
+  // For ranges, the loop variable is always i32
+  auto loop_var_type =
+      std::make_unique<IntegerTypeNode>(node.location, 32, true);
+  symbols.defineVariable(node.variable_name, VarDeclKind::LET,
+                         std::move(loop_var_type));
+
+  // Analyze the loop body
+  for (const auto& stmt : node.body) {
+    if (stmt) {
+      stmt->accept(*this);
+    }
+  }
+  // Exit the loop scope
+  symbols.leaveScope();
+
+  return nullptr;
+}
+
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(
     FunctionCallExpr& node) {  // Check for built-in functions first
   if (node.function_name == "print") {
@@ -558,9 +592,114 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BuiltinCallExpr& node) {
             "got " +
                 std::to_string(node.arguments.size()));
       return nullptr;
-    }
-    // Return i64 (syscall return value)
+    }  // Return i64 (syscall return value)
     return std::make_unique<IntegerTypeNode>(node.location, 64, true);  // i64
+  } else if (node.builtin_name == "socket") {
+    // $$socket(domain, type, protocol) -> socket descriptor
+    if (node.arguments.size() != 3) {
+      error(node.location, "$$socket expects exactly 3 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 64,
+                                             true);  // i64 socket
+  } else if (node.builtin_name == "bind") {
+    // $$bind(socket, sockaddr, addrlen) -> int result
+    if (node.arguments.size() != 3) {
+      error(node.location, "$$bind expects exactly 3 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "listen") {
+    // $$listen(socket, backlog) -> int result
+    if (node.arguments.size() != 2) {
+      error(node.location, "$$listen expects exactly 2 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "accept") {
+    // $$accept(socket, sockaddr, addrlen) -> socket descriptor
+    if (node.arguments.size() != 3) {
+      error(node.location, "$$accept expects exactly 3 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 64,
+                                             true);  // i64 socket
+  } else if (node.builtin_name == "connect") {
+    // $$connect(socket, sockaddr, addrlen) -> int result
+    if (node.arguments.size() != 3) {
+      error(node.location, "$$connect expects exactly 3 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "send") {
+    // $$send(socket, buffer, length, flags) -> bytes sent
+    if (node.arguments.size() != 4) {
+      error(node.location, "$$send expects exactly 4 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "recv") {
+    // $$recv(socket, buffer, length, flags) -> bytes received
+    if (node.arguments.size() != 4) {
+      error(node.location, "$$recv expects exactly 4 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "closesocket") {
+    // $$closesocket(socket) -> int result
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$closesocket expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "WSAStartup") {
+    // $$WSAStartup(version, wsadata) -> int result
+    if (node.arguments.size() != 2) {
+      error(node.location, "$$WSAStartup expects exactly 2 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "WSACleanup") {
+    // $$WSACleanup() -> int result
+    if (node.arguments.size() != 0) {
+      error(node.location, "$$WSACleanup expects exactly 0 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "htons") {
+    // $$htons(hostshort) -> network short
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$htons expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 16, false);  // u16
+  } else if (node.builtin_name == "htonl") {
+    // $$htonl(hostlong) -> network long
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$htonl expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, false);  // u32
+  } else if (node.builtin_name == "inet_addr") {
+    // $$inet_addr(cp) -> network address
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$inet_addr expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, false);  // u32
   } else {
     error(node.location, "Unknown builtin function: $$" + node.builtin_name);
     return nullptr;
@@ -900,7 +1039,132 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::cloneType(TypeNode* type) {
     return std::make_unique<OwnedPointerTypeNode>(owned_type->location,
                                                   std::move(cloned_pointed));
   }
-
   // Add more type cloning as needed for other type nodes
   return nullptr;
+}
+
+// --- New Phase 1 Expression Visitors ---
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(ArrayLiteralExpr& node) {
+  if (node.elements.empty()) {
+    // Empty array - we need to infer the type somehow
+    // For now, return a generic array type
+    return std::make_unique<SliceTypeNode>(
+        node.location,
+        std::make_unique<IntegerTypeNode>(node.location, 32, true));
+  }
+
+  // Analyze all elements to determine their types
+  std::vector<std::unique_ptr<TypeNode>> element_types;
+  for (const auto& element : node.elements) {
+    auto element_type = element->accept(*this);
+    if (!element_type) {
+      error(node.location, "Cannot determine type of array element");
+      return nullptr;
+    }
+    element_types.push_back(std::move(element_type));
+  }
+
+  // Determine the common type for all elements
+  std::unique_ptr<TypeNode> common_type = nullptr;
+  // Start with the first element's type as the candidate
+  if (dynamic_cast<IntegerLiteralTypeNode*>(element_types[0].get())) {
+    // If first element is an integer literal, use i32 as the common type
+    common_type = std::make_unique<IntegerTypeNode>(node.location, 32, true);
+  } else {
+    // Otherwise, use the first element's type
+    common_type = cloneType(element_types[0].get());
+  }
+
+  // Check that all elements are compatible with the common type
+  for (size_t i = 0; i < element_types.size(); ++i) {
+    bool compatible = false;
+
+    if (dynamic_cast<IntegerLiteralTypeNode*>(element_types[i].get())) {
+      // Integer literals are compatible with integer types
+      if (dynamic_cast<IntegerTypeNode*>(common_type.get())) {
+        compatible = true;
+      }
+    } else {
+      // Use existing type equality check
+      compatible = common_type->isEqualTo(element_types[i].get());
+    }
+
+    if (!compatible) {
+      error(node.location, "Array elements must have consistent types");
+      return nullptr;
+    }
+  }
+
+  // Return slice type with common element type
+  return std::make_unique<SliceTypeNode>(node.location, std::move(common_type));
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(IndexExpr& node) {
+  // Analyze array expression
+  auto array_type = node.array->accept(*this);
+  if (!array_type) {
+    error(node.location, "Cannot determine type of indexed expression");
+    return nullptr;
+  }
+
+  // Analyze index expression
+  auto index_type = node.index->accept(*this);
+  if (!index_type) {
+    error(node.location, "Cannot determine type of index expression");
+    return nullptr;
+  }
+
+  // Check that index is integer type
+  if (!dynamic_cast<IntegerTypeNode*>(index_type.get()) &&
+      !dynamic_cast<IntegerLiteralTypeNode*>(index_type.get())) {
+    error(node.location, "Array index must be integer type");
+    return nullptr;
+  }
+
+  // Check that array is slice type
+  if (auto slice_type = dynamic_cast<SliceTypeNode*>(array_type.get())) {
+    return cloneType(slice_type->element_type.get());
+  }
+
+  error(node.location, "Cannot index non-array type");
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(RangeExpr& node) {
+  // Analyze start expression
+  if (node.start) {
+    auto start_type = node.start->accept(*this);
+    if (!start_type) {
+      error(node.location, "Cannot determine type of range start");
+      return nullptr;
+    }
+
+    // Check that start is integer type
+    if (!dynamic_cast<IntegerTypeNode*>(start_type.get()) &&
+        !dynamic_cast<IntegerLiteralTypeNode*>(start_type.get())) {
+      error(node.location, "Range start must be integer type");
+      return nullptr;
+    }
+  }
+
+  // Analyze end expression
+  if (node.end) {
+    auto end_type = node.end->accept(*this);
+    if (!end_type) {
+      error(node.location, "Cannot determine type of range end");
+      return nullptr;
+    }
+
+    // Check that end is integer type
+    if (!dynamic_cast<IntegerTypeNode*>(end_type.get()) &&
+        !dynamic_cast<IntegerLiteralTypeNode*>(end_type.get())) {
+      error(node.location, "Range end must be integer type");
+      return nullptr;
+    }
+  }
+
+  // Ranges don't have a concrete type in this implementation
+  // They are only used in for loop contexts
+  return std::make_unique<IntegerTypeNode>(node.location, 32, true);
 }

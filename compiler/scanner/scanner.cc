@@ -12,6 +12,8 @@ static const std::unordered_map<std::string_view, TokenType> keywords = {
     {"true", TokenType::TOKEN_KEYWORD_TRUE},
     {"false", TokenType::TOKEN_KEYWORD_FALSE},
     {"while", TokenType::TOKEN_KEYWORD_WHILE},
+    {"for", TokenType::TOKEN_KEYWORD_FOR},
+    {"in", TokenType::TOKEN_IN},
     {"return", TokenType::TOKEN_KEYWORD_RETURN},
     {"defer", TokenType::TOKEN_KEYWORD_DEFER},
     {"unsafe", TokenType::TOKEN_KEYWORD_UNSAFE},
@@ -270,8 +272,15 @@ LoomToken Scanner::scanNextToken() {
     case '?':
       return makeToken(TokenType::TOKEN_QUESTION);
     case '.':
+      if (peek() == '.' && peek_next() == '=') {
+        advance();  // consume second .
+        advance();  // consume =
+        return makeToken(TokenType::TOKEN_DOT_DOT_EQUAL);
+      }
       return makeToken(match('.') ? TokenType::TOKEN_DOT_DOT
                                   : TokenType::TOKEN_DOT);
+    case '@':
+      return makeToken(TokenType::TOKEN_AT);
     case '(':
       return makeToken(TokenType::TOKEN_LEFT_PAREN);
     case '!':
@@ -414,6 +423,14 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_DOT";
     case TokenType::TOKEN_DOT_DOT:
       return "TOKEN_DOT_DOT";
+    case TokenType::TOKEN_DOT_DOT_EQUAL:
+      return "TOKEN_DOT_DOT_EQUAL";
+    case TokenType::TOKEN_AT:
+      return "TOKEN_AT";
+    case TokenType::TOKEN_IN:
+      return "TOKEN_IN";
+    case TokenType::TOKEN_KEYWORD_FOR:
+      return "TOKEN_KEYWORD_FOR";
     case TokenType::TOKEN_ERROR:
       return "TOKEN_ERROR";
     default:

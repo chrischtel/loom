@@ -9,7 +9,7 @@ std::unique_ptr<ExprNode> Parser::parseExpression() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseAssignment() {
-  std::unique_ptr<ExprNode> expr = parseEquality();
+  std::unique_ptr<ExprNode> expr = parseRange();
 
   if (match(TokenType::TOKEN_EQUAL)) {
     const LoomToken& equals = previous();
@@ -22,6 +22,22 @@ std::unique_ptr<ExprNode> Parser::parseAssignment() {
 
     error(equals, "Invalid assignment target.");
     return nullptr;
+  }
+
+  return expr;
+}
+
+std::unique_ptr<ExprNode> Parser::parseRange() {
+  std::unique_ptr<ExprNode> expr = parseEquality();
+
+  if (match(TokenType::TOKEN_DOT_DOT) ||
+      match(TokenType::TOKEN_DOT_DOT_EQUAL)) {
+    const LoomToken& range_op = previous();
+    bool inclusive = (range_op.type == TokenType::TOKEN_DOT_DOT_EQUAL);
+    std::unique_ptr<ExprNode> end = parseEquality();
+
+    return std::make_unique<RangeExpr>(range_op.location, std::move(expr),
+                                       std::move(end), inclusive);
   }
 
   return expr;
@@ -98,7 +114,6 @@ std::unique_ptr<ExprNode> Parser::parseUnary() {
     std::unique_ptr<ExprNode> right = parseUnary();
     return std::make_unique<UnaryExpr>(op, std::move(right));
   }
-
   return parseCall();
 }
 
@@ -132,6 +147,11 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
     const LoomToken& token = previous();
     return std::make_unique<Identifier>(
         token.location, "null");  // For now, treat as identifier
+  }
+
+  // Array literal: @[1, 2, 3]
+  if (match(TokenType::TOKEN_AT)) {
+    return parseArrayLiteral();
   }
 
   if (match(TokenType::TOKEN_LEFT_PAREN)) {
@@ -234,12 +254,24 @@ std::unique_ptr<TypeNode> Parser::parseType() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseCall() {
-  std::unique_ptr<ExprNode> expr = parsePrimary();
+  std::unique_ptr<ExprNode> expr = parsePostfix();
 
   while (true) {
     if (match(TokenType::TOKEN_LEFT_PAREN)) {
       expr = finishCall(std::move(expr));
-    } else if (match(TokenType::TOKEN_DOT)) {
+    } else {
+      break;
+    }
+  }
+
+  return expr;
+}
+
+std::unique_ptr<ExprNode> Parser::parsePostfix() {
+  std::unique_ptr<ExprNode> expr = parsePrimary();
+
+  while (true) {
+    if (match(TokenType::TOKEN_DOT)) {
       // Member access: expr.field
       const LoomToken& dot = previous();
       consume(TokenType::TOKEN_IDENTIFIER, "Expected field name after '.'");
@@ -253,37 +285,18 @@ std::unique_ptr<ExprNode> Parser::parseCall() {
       const LoomToken& field = previous();
       expr = std::make_unique<PointerAccessExpr>(arrow.location,
                                                  std::move(expr), field.value);
-    } else if (match(TokenType::TOKEN_LEFT_BRACKET)) {
-      // Array indexing or slice: expr[index] or expr[start..end]
-      const LoomToken& bracket = previous();
-      std::unique_ptr<ExprNode> start = parseExpression();
-
-      if (match(TokenType::TOKEN_DOT_DOT)) {
-        // Slice expression: expr[start..end]
-        std::unique_ptr<ExprNode> end = nullptr;
-        if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
-          end = parseExpression();
-        }
-        consume(TokenType::TOKEN_RIGHT_BRACKET,
-                "Expected ']' after slice expression");
-        expr = std::make_unique<SliceExpr>(bracket.location, std::move(expr),
-                                           std::move(start), std::move(end));
-      } else {
-        // Array indexing: expr[index] - TODO: implement ArrayIndexExpr
-        consume(TokenType::TOKEN_RIGHT_BRACKET,
-                "Expected ']' after array index");
-        // For now, treat single index as slice with same start and end
-        auto end_copy = std::unique_ptr<ExprNode>(
-            nullptr);  // TODO: clone start for single index
-        expr =
-            std::make_unique<SliceExpr>(bracket.location, std::move(expr),
-                                        std::move(start), std::move(end_copy));
-      }
+    } else if (match(TokenType::TOKEN_AT)) {
+      // Index access: expr@[index]
+      const LoomToken& at = previous();
+      consume(TokenType::TOKEN_LEFT_BRACKET, "Expected '[' after '@'");
+      std::unique_ptr<ExprNode> index = parseExpression();
+      consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array index");
+      expr = std::make_unique<IndexExpr>(at.location, std::move(expr),
+                                         std::move(index));
     } else {
       break;
     }
   }
-
   return expr;
 }
 
@@ -327,7 +340,26 @@ std::unique_ptr<ExprNode> Parser::parseBuiltinCall() {
 
   consume(TokenType::TOKEN_RIGHT_PAREN,
           "Expected ')' after builtin arguments.");
-
   return std::make_unique<BuiltinCallExpr>(builtin_token.location, builtin_name,
                                            std::move(arguments));
+}
+
+// Parse array literal: @[elem1, elem2, ...]
+std::unique_ptr<ExprNode> Parser::parseArrayLiteral() {
+  const LoomToken& at_token = previous();
+
+  consume(TokenType::TOKEN_LEFT_BRACKET, "Expected '[' after '@'");
+
+  std::vector<std::unique_ptr<ExprNode>> elements;
+
+  // Handle empty array
+  if (!check(TokenType::TOKEN_RIGHT_BRACKET)) {
+    do {
+      elements.push_back(parseExpression());
+    } while (match(TokenType::TOKEN_COMMA));
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array elements");
+  return std::make_unique<ArrayLiteralExpr>(at_token.location,
+                                            std::move(elements));
 }

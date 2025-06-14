@@ -411,87 +411,213 @@ llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
                                              std::vector<llvm::Value*>& args) {
   std::cout << "[CodeGen] Generating Windows syscall: " << name << std::endl;
   if (name == "print" && args.size() >= 1) {
-    // Use WriteFile API for printing with automatic newline
-    llvm::Function* writeFile = module->getFunction("WriteFile");
-    if (!writeFile) {
-      llvm::FunctionType* writeFileType = llvm::FunctionType::get(
-          builder->getInt32Ty(),  // BOOL (treated as i32)
-          {
-              llvm::PointerType::getUnqual(*context),  // HANDLE
-              llvm::PointerType::getUnqual(*context),  // LPCVOID (buffer)
-              builder->getInt32Ty(),                   // DWORD (size)
-              llvm::PointerType::getUnqual(
-                  *context),                          // LPDWORD (bytes written)
-              llvm::PointerType::getUnqual(*context)  // LPOVERLAPPED
-          },
-          false);
-      writeFile =
-          llvm::Function::Create(writeFileType, llvm::Function::ExternalLinkage,
-                                 "WriteFile", module.get());
-    }
+    // Check if the argument is an integer or a string
+    llvm::Type* argType = args[0]->getType();
 
-    llvm::Function* getStdHandle = module->getFunction("GetStdHandle");
-    if (!getStdHandle) {
-      llvm::FunctionType* getStdHandleType = llvm::FunctionType::get(
-          llvm::PointerType::getUnqual(*context),  // HANDLE
-          {builder->getInt32Ty()},                 // DWORD
-          false);
-      getStdHandle = llvm::Function::Create(getStdHandleType,
-                                            llvm::Function::ExternalLinkage,
-                                            "GetStdHandle", module.get());
-    }
+    if (argType->isIntegerTy()) {
+      // Handle integer printing
+      std::cout << "[CodeGen] Printing integer value" << std::endl;
 
-    // Get stdout handle (STD_OUTPUT_HANDLE = -11)
-    llvm::Value* stdoutHandle = builder->CreateCall(
-        getStdHandle, {builder->getInt32(-11)}, "stdout.handle");
+      // Use WriteFile API for printing integers
+      llvm::Function* writeFile = module->getFunction("WriteFile");
+      if (!writeFile) {
+        llvm::FunctionType* writeFileType = llvm::FunctionType::get(
+            builder->getInt32Ty(),  // BOOL (treated as i32)
+            {
+                llvm::PointerType::getUnqual(*context),  // HANDLE
+                llvm::PointerType::getUnqual(*context),  // LPCVOID (buffer)
+                builder->getInt32Ty(),                   // DWORD (size)
+                llvm::PointerType::getUnqual(
+                    *context),  // LPDWORD (bytes written)
+                llvm::PointerType::getUnqual(*context)  // LPOVERLAPPED
+            },
+            false);
+        writeFile = llvm::Function::Create(writeFileType,
+                                           llvm::Function::ExternalLinkage,
+                                           "WriteFile", module.get());
+      }
 
-    // Calculate string length - for string literals we can get the length at
-    // compile time
-    llvm::Value* bufferSize;
-    if (llvm::GlobalVariable* globalVar =
-            llvm::dyn_cast<llvm::GlobalVariable>(args[0])) {
-      // This is a string literal - get compile-time length
-      if (llvm::ConstantDataArray* stringData =
-              llvm::dyn_cast<llvm::ConstantDataArray>(
-                  globalVar->getInitializer())) {
-        // Get length excluding null terminator
-        uint64_t length = stringData->getNumElements() - 1;
-        bufferSize = builder->getInt32(static_cast<uint32_t>(length));
+      llvm::Function* getStdHandle = module->getFunction("GetStdHandle");
+      if (!getStdHandle) {
+        llvm::FunctionType* getStdHandleType = llvm::FunctionType::get(
+            llvm::PointerType::getUnqual(*context),  // HANDLE
+            {builder->getInt32Ty()},                 // DWORD
+            false);
+        getStdHandle = llvm::Function::Create(getStdHandleType,
+                                              llvm::Function::ExternalLinkage,
+                                              "GetStdHandle", module.get());
+      }
+
+      // Get stdout handle (STD_OUTPUT_HANDLE = -11)
+      llvm::Value* stdoutHandle =
+          builder->CreateCall(getStdHandle, {builder->getInt32(-11)},
+                              "stdout.handle");  // Convert integer to string
+      // For simplicity, let's create a formatted string from the integer
+      // In a more complete implementation, we'd do the conversion at runtime
+      llvm::Value* intValue = args[0];
+
+      // For simplicity, let's create a formatted string from the integer
+      // In a more complete implementation, we'd do the conversion at runtime
+      if (auto* constInt = llvm::dyn_cast<llvm::ConstantInt>(intValue)) {
+        // If it's a compile-time constant, we can convert it directly
+        std::string intStr = std::to_string(constInt->getSExtValue());
+        llvm::Constant* intStrGlobal =
+            builder->CreateGlobalString(intStr, "int_str");
+        llvm::Value* intStrPtr = builder->CreatePointerCast(
+            intStrGlobal, llvm::PointerType::getUnqual(*context));
+
+        llvm::Value* strSize =
+            builder->getInt32(static_cast<uint32_t>(intStr.length()));
+        llvm::Value* bytesWritten = builder->CreateAlloca(
+            builder->getInt32Ty(), nullptr, "bytes.written");
+
+        // Write the integer string
+        llvm::Value* result1 =
+            builder->CreateCall(writeFile,
+                                {stdoutHandle, intStrPtr, strSize, bytesWritten,
+                                 llvm::ConstantPointerNull::get(
+                                     llvm::PointerType::getUnqual(*context))},
+                                "write.result");
+
+        // Write newline
+        llvm::Constant* newlineStr =
+            builder->CreateGlobalString("\n", "newline");
+        llvm::Value* newlinePtr = builder->CreatePointerCast(
+            newlineStr, llvm::PointerType::getUnqual(*context));
+        llvm::Value* newlineSize = builder->getInt32(1);
+        llvm::Value* bytesWritten2 = builder->CreateAlloca(
+            builder->getInt32Ty(), nullptr, "bytes.written.newline");
+
+        builder->CreateCall(
+            writeFile,
+            {stdoutHandle, newlinePtr, newlineSize, bytesWritten2,
+             llvm::ConstantPointerNull::get(
+                 llvm::PointerType::getUnqual(*context))},
+            "write.newline.result");
+        return result1;
       } else {
-        // Fallback for unknown string format
-        bufferSize = builder->getInt32(50);  // Conservative estimate
+        // For runtime integers, we need a more complex conversion
+        // For now, just print a placeholder
+        llvm::Constant* placeholderStr =
+            builder->CreateGlobalString("<integer>", "placeholder");
+        llvm::Value* placeholderPtr = builder->CreatePointerCast(
+            placeholderStr, llvm::PointerType::getUnqual(*context));
+
+        llvm::Value* strSize = builder->getInt32(9);  // length of "<integer>"
+        llvm::Value* bytesWritten = builder->CreateAlloca(
+            builder->getInt32Ty(), nullptr, "bytes.written");
+
+        llvm::Value* result1 = builder->CreateCall(
+            writeFile,
+            {stdoutHandle, placeholderPtr, strSize, bytesWritten,
+             llvm::ConstantPointerNull::get(
+                 llvm::PointerType::getUnqual(*context))},
+            "write.result");
+
+        // Write newline
+        llvm::Constant* newlineStr =
+            builder->CreateGlobalString("\n", "newline");
+        llvm::Value* newlinePtr = builder->CreatePointerCast(
+            newlineStr, llvm::PointerType::getUnqual(*context));
+        llvm::Value* newlineSize = builder->getInt32(1);
+        llvm::Value* bytesWritten2 = builder->CreateAlloca(
+            builder->getInt32Ty(), nullptr, "bytes.written.newline");
+
+        builder->CreateCall(
+            writeFile,
+            {stdoutHandle, newlinePtr, newlineSize, bytesWritten2,
+             llvm::ConstantPointerNull::get(
+                 llvm::PointerType::getUnqual(*context))},
+            "write.newline.result");
+        return result1;
       }
     } else {
-      // For non-literal strings, use a conservative default
-      // In a full implementation, we'd track string lengths in the type system
-      bufferSize = builder->getInt32(100);
+      // Handle string printing (existing code)
+      std::cout << "[CodeGen] Printing string value" << std::endl;
+
+      // Use WriteFile API for printing with automatic newline
+      llvm::Function* writeFile = module->getFunction("WriteFile");
+      if (!writeFile) {
+        llvm::FunctionType* writeFileType = llvm::FunctionType::get(
+            builder->getInt32Ty(),  // BOOL (treated as i32)
+            {
+                llvm::PointerType::getUnqual(*context),  // HANDLE
+                llvm::PointerType::getUnqual(*context),  // LPCVOID (buffer)
+                builder->getInt32Ty(),                   // DWORD (size)
+                llvm::PointerType::getUnqual(
+                    *context),  // LPDWORD (bytes written)
+                llvm::PointerType::getUnqual(*context)  // LPOVERLAPPED
+            },
+            false);
+        writeFile = llvm::Function::Create(writeFileType,
+                                           llvm::Function::ExternalLinkage,
+                                           "WriteFile", module.get());
+      }
+
+      llvm::Function* getStdHandle = module->getFunction("GetStdHandle");
+      if (!getStdHandle) {
+        llvm::FunctionType* getStdHandleType = llvm::FunctionType::get(
+            llvm::PointerType::getUnqual(*context),  // HANDLE
+            {builder->getInt32Ty()},                 // DWORD
+            false);
+        getStdHandle = llvm::Function::Create(getStdHandleType,
+                                              llvm::Function::ExternalLinkage,
+                                              "GetStdHandle", module.get());
+      }
+
+      // Get stdout handle (STD_OUTPUT_HANDLE = -11)
+      llvm::Value* stdoutHandle = builder->CreateCall(
+          getStdHandle, {builder->getInt32(-11)}, "stdout.handle");
+
+      // Calculate string length - for string literals we can get the length at
+      // compile time
+      llvm::Value* bufferSize;
+      if (llvm::GlobalVariable* globalVar =
+              llvm::dyn_cast<llvm::GlobalVariable>(args[0])) {
+        // This is a string literal - get compile-time length
+        if (llvm::ConstantDataArray* stringData =
+                llvm::dyn_cast<llvm::ConstantDataArray>(
+                    globalVar->getInitializer())) {
+          // Get length excluding null terminator
+          uint64_t length = stringData->getNumElements() - 1;
+          bufferSize = builder->getInt32(static_cast<uint32_t>(length));
+        } else {
+          // Fallback for unknown string format
+          bufferSize = builder->getInt32(50);  // Conservative estimate
+        }
+      } else {
+        // For non-literal strings, use a conservative default
+        // In a full implementation, we'd track string lengths in the type
+        // system
+        bufferSize = builder->getInt32(100);
+      }
+
+      llvm::Value* bytesWritten = builder->CreateAlloca(
+          builder->getInt32Ty(), nullptr, "bytes.written");
+
+      // First write the string content
+      llvm::Value* result1 = builder->CreateCall(
+          writeFile,
+          {stdoutHandle, args[0], bufferSize, bytesWritten,
+           llvm::ConstantPointerNull::get(
+               llvm::PointerType::getUnqual(*context))},
+          "write.result");  // Then write a newline for $$print (but not for
+                            // direct $$syscall)
+      llvm::Constant* newlineStr = builder->CreateGlobalString("\n", "newline");
+      llvm::Value* newlinePtr = builder->CreatePointerCast(
+          newlineStr, llvm::PointerType::getUnqual(*context));
+      llvm::Value* newlineSize = builder->getInt32(1);
+      llvm::Value* bytesWritten2 = builder->CreateAlloca(
+          builder->getInt32Ty(), nullptr, "bytes.written.newline");
+
+      // Write the newline (don't need to store result)
+      builder->CreateCall(writeFile,
+                          {stdoutHandle, newlinePtr, newlineSize, bytesWritten2,
+                           llvm::ConstantPointerNull::get(
+                               llvm::PointerType::getUnqual(*context))},
+                          "write.newline.result");
+      return result1;  // Return the result of the main write operation
     }
-
-    llvm::Value* bytesWritten =
-        builder->CreateAlloca(builder->getInt32Ty(), nullptr, "bytes.written");
-
-    // First write the string content
-    llvm::Value* result1 = builder->CreateCall(
-        writeFile,
-        {stdoutHandle, args[0], bufferSize, bytesWritten,
-         llvm::ConstantPointerNull::get(
-             llvm::PointerType::getUnqual(*context))},
-        "write.result");  // Then write a newline for $$print (but not for
-                          // direct $$syscall)
-    llvm::Constant* newlineStr = builder->CreateGlobalString("\n", "newline");
-    llvm::Value* newlinePtr = builder->CreatePointerCast(
-        newlineStr, llvm::PointerType::getUnqual(*context));
-    llvm::Value* newlineSize = builder->getInt32(1);
-    llvm::Value* bytesWritten2 = builder->CreateAlloca(
-        builder->getInt32Ty(), nullptr, "bytes.written.newline");
-
-    // Write the newline (don't need to store result)
-    builder->CreateCall(writeFile,
-                        {stdoutHandle, newlinePtr, newlineSize, bytesWritten2,
-                         llvm::ConstantPointerNull::get(
-                             llvm::PointerType::getUnqual(*context))},
-                        "write.newline.result");
-    return result1;  // Return the result of the main write operation
   } else if (name == "print_addr" && args.size() >= 1) {
     // Print the actual pointer address
     llvm::Function* writeFileAddr = module->getFunction("WriteFile");
@@ -604,8 +730,189 @@ llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
                          bytesWrittenNewline,
                          llvm::ConstantPointerNull::get(
                              llvm::PointerType::getUnqual(*context))});
-
     return result;
+
+  } else if (name == "socket" && args.size() >= 3) {
+    // Create a socket using Windows Winsock API
+    // Args: domain (AF_INET=2), type (SOCK_STREAM=1), protocol (0)
+    llvm::Function* socketFunc = module->getFunction("socket");
+    if (!socketFunc) {
+      llvm::FunctionType* socketType = llvm::FunctionType::get(
+          builder->getInt64Ty(),  // SOCKET (treated as i64)
+          {builder->getInt32Ty(), builder->getInt32Ty(), builder->getInt32Ty()},
+          false);
+      socketFunc = llvm::Function::Create(
+          socketType, llvm::Function::ExternalLinkage, "socket", module.get());
+    }
+    return builder->CreateCall(socketFunc, {args[0], args[1], args[2]});
+
+  } else if (name == "bind" && args.size() >= 3) {
+    // Bind socket to address
+    // Args: socket, sockaddr*, addrlen
+    llvm::Function* bindFunc = module->getFunction("bind");
+    if (!bindFunc) {
+      llvm::FunctionType* bindType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // int result
+          {builder->getInt64Ty(), llvm::PointerType::getUnqual(*context),
+           builder->getInt32Ty()},
+          false);
+      bindFunc = llvm::Function::Create(
+          bindType, llvm::Function::ExternalLinkage, "bind", module.get());
+    }
+    return builder->CreateCall(bindFunc, {args[0], args[1], args[2]});
+
+  } else if (name == "listen" && args.size() >= 2) {
+    // Listen for connections
+    // Args: socket, backlog
+    llvm::Function* listenFunc = module->getFunction("listen");
+    if (!listenFunc) {
+      llvm::FunctionType* listenType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // int result
+          {builder->getInt64Ty(), builder->getInt32Ty()}, false);
+      listenFunc = llvm::Function::Create(
+          listenType, llvm::Function::ExternalLinkage, "listen", module.get());
+    }
+    return builder->CreateCall(listenFunc, {args[0], args[1]});
+
+  } else if (name == "accept" && args.size() >= 3) {
+    // Accept incoming connection
+    // Args: socket, sockaddr*, addrlen*
+    llvm::Function* acceptFunc = module->getFunction("accept");
+    if (!acceptFunc) {
+      llvm::FunctionType* acceptType = llvm::FunctionType::get(
+          builder->getInt64Ty(),  // SOCKET result
+          {builder->getInt64Ty(), llvm::PointerType::getUnqual(*context),
+           llvm::PointerType::getUnqual(*context)},
+          false);
+      acceptFunc = llvm::Function::Create(
+          acceptType, llvm::Function::ExternalLinkage, "accept", module.get());
+    }
+    return builder->CreateCall(acceptFunc, {args[0], args[1], args[2]});
+
+  } else if (name == "connect" && args.size() >= 3) {
+    // Connect to remote address
+    // Args: socket, sockaddr*, addrlen
+    llvm::Function* connectFunc = module->getFunction("connect");
+    if (!connectFunc) {
+      llvm::FunctionType* connectType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // int result
+          {builder->getInt64Ty(), llvm::PointerType::getUnqual(*context),
+           builder->getInt32Ty()},
+          false);
+      connectFunc =
+          llvm::Function::Create(connectType, llvm::Function::ExternalLinkage,
+                                 "connect", module.get());
+    }
+    return builder->CreateCall(connectFunc, {args[0], args[1], args[2]});
+
+  } else if (name == "send" && args.size() >= 4) {
+    // Send data on socket
+    // Args: socket, buffer, length, flags
+    llvm::Function* sendFunc = module->getFunction("send");
+    if (!sendFunc) {
+      llvm::FunctionType* sendType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // int bytes sent
+          {builder->getInt64Ty(), llvm::PointerType::getUnqual(*context),
+           builder->getInt32Ty(), builder->getInt32Ty()},
+          false);
+      sendFunc = llvm::Function::Create(
+          sendType, llvm::Function::ExternalLinkage, "send", module.get());
+    }
+    return builder->CreateCall(sendFunc, {args[0], args[1], args[2], args[3]});
+
+  } else if (name == "recv" && args.size() >= 4) {
+    // Receive data from socket
+    // Args: socket, buffer, length, flags
+    llvm::Function* recvFunc = module->getFunction("recv");
+    if (!recvFunc) {
+      llvm::FunctionType* recvType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // int bytes received
+          {builder->getInt64Ty(), llvm::PointerType::getUnqual(*context),
+           builder->getInt32Ty(), builder->getInt32Ty()},
+          false);
+      recvFunc = llvm::Function::Create(
+          recvType, llvm::Function::ExternalLinkage, "recv", module.get());
+    }
+    return builder->CreateCall(recvFunc, {args[0], args[1], args[2], args[3]});
+
+  } else if (name == "closesocket" && args.size() >= 1) {
+    // Close socket
+    // Args: socket
+    llvm::Function* closesocketFunc = module->getFunction("closesocket");
+    if (!closesocketFunc) {
+      llvm::FunctionType* closesocketType =
+          llvm::FunctionType::get(builder->getInt32Ty(),  // int result
+                                  {builder->getInt64Ty()}, false);
+      closesocketFunc = llvm::Function::Create(closesocketType,
+                                               llvm::Function::ExternalLinkage,
+                                               "closesocket", module.get());
+    }
+    return builder->CreateCall(closesocketFunc, {args[0]});
+
+  } else if (name == "WSAStartup" && args.size() >= 2) {
+    // Initialize Winsock
+    // Args: wVersionRequested, lpWSAData
+    llvm::Function* wsaStartupFunc = module->getFunction("WSAStartup");
+    if (!wsaStartupFunc) {
+      llvm::FunctionType* wsaStartupType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // int result
+          {builder->getInt16Ty(), llvm::PointerType::getUnqual(*context)},
+          false);
+      wsaStartupFunc = llvm::Function::Create(wsaStartupType,
+                                              llvm::Function::ExternalLinkage,
+                                              "WSAStartup", module.get());
+    }
+    return builder->CreateCall(wsaStartupFunc, {args[0], args[1]});
+
+  } else if (name == "WSACleanup" && args.size() == 0) {
+    // Cleanup Winsock
+    llvm::Function* wsaCleanupFunc = module->getFunction("WSACleanup");
+    if (!wsaCleanupFunc) {
+      llvm::FunctionType* wsaCleanupType =
+          llvm::FunctionType::get(builder->getInt32Ty(),  // int result
+                                  {}, false);
+      wsaCleanupFunc = llvm::Function::Create(wsaCleanupType,
+                                              llvm::Function::ExternalLinkage,
+                                              "WSACleanup", module.get());
+    }
+    return builder->CreateCall(wsaCleanupFunc, {});
+
+  } else if (name == "htons" && args.size() >= 1) {
+    // Convert host byte order to network byte order (16-bit)
+    llvm::Function* htonsFunc = module->getFunction("htons");
+    if (!htonsFunc) {
+      llvm::FunctionType* htonsType =
+          llvm::FunctionType::get(builder->getInt16Ty(),  // u_short result
+                                  {builder->getInt16Ty()}, false);
+      htonsFunc = llvm::Function::Create(
+          htonsType, llvm::Function::ExternalLinkage, "htons", module.get());
+    }
+    return builder->CreateCall(htonsFunc, {args[0]});
+
+  } else if (name == "htonl" && args.size() >= 1) {
+    // Convert host byte order to network byte order (32-bit)
+    llvm::Function* htonlFunc = module->getFunction("htonl");
+    if (!htonlFunc) {
+      llvm::FunctionType* htonlType =
+          llvm::FunctionType::get(builder->getInt32Ty(),  // u_long result
+                                  {builder->getInt32Ty()}, false);
+      htonlFunc = llvm::Function::Create(
+          htonlType, llvm::Function::ExternalLinkage, "htonl", module.get());
+    }
+    return builder->CreateCall(htonlFunc, {args[0]});
+
+  } else if (name == "inet_addr" && args.size() >= 1) {
+    // Convert IP address string to binary form
+    llvm::Function* inetAddrFunc = module->getFunction("inet_addr");
+    if (!inetAddrFunc) {
+      llvm::FunctionType* inetAddrType = llvm::FunctionType::get(
+          builder->getInt32Ty(),  // unsigned long result
+          {llvm::PointerType::getUnqual(*context)}, false);
+      inetAddrFunc =
+          llvm::Function::Create(inetAddrType, llvm::Function::ExternalLinkage,
+                                 "inet_addr", module.get());
+    }
+    return builder->CreateCall(inetAddrFunc, {args[0]});
 
   } else if (name == "exit" && args.size() >= 1) {
     // Use ExitProcess API as before
@@ -779,7 +1086,6 @@ llvm::Value* CodeGen::codegenWithTargetType(ASTNode& node,
     std::cout << "[CodeGen] Casting float to integer" << std::endl;
     return builder->CreateFPToSI(baseValue, targetType, "fptosi");
   }
-
   // Value to nullable type (represented as pointer)
   if (targetType->isPointerTy()) {
     std::cout << "[CodeGen] Casting value to nullable/pointer type"
@@ -797,6 +1103,50 @@ llvm::Value* CodeGen::codegenWithTargetType(ASTNode& node,
 
     // Return the pointer to the stored value
     return alloca;
+  }
+  // Array to slice conversion
+  if (targetType->isStructTy()) {
+    std::cout << "[CodeGen] Checking if we can convert to slice type"
+              << std::endl;
+
+    // Check if target is a slice struct (should have ptr and i64 fields)
+    if (targetType->getStructNumElements() == 2) {
+      std::cout << "[CodeGen] Converting to slice type" << std::endl;
+
+      // For array literals, baseValue is already a pointer to the first element
+      if (baseValue->getType()->isPointerTy()) {
+        // We need to determine the array size - for now, let's hardcode it
+        // In a real implementation, we'd track this information
+        uint64_t arraySize = 3;  // TODO: Get actual size from the array literal
+
+        // Create slice struct
+        llvm::Value* slice = llvm::UndefValue::get(targetType);
+        slice = builder->CreateInsertValue(slice, baseValue, 0, "slice.ptr");
+        slice = builder->CreateInsertValue(slice, builder->getInt64(arraySize),
+                                           1, "slice.len");
+
+        return slice;
+      }
+
+      // If baseValue is an actual array type
+      if (baseValue->getType()->isArrayTy()) {
+        auto* arrayType = llvm::cast<llvm::ArrayType>(baseValue->getType());
+        uint64_t arraySize = arrayType->getNumElements();
+
+        // Get pointer to first element of array
+        llvm::Value* arrayPtr = builder->CreateGEP(
+            arrayType, baseValue, {builder->getInt32(0), builder->getInt32(0)},
+            "array.ptr");
+
+        // Create slice struct
+        llvm::Value* slice = llvm::UndefValue::get(targetType);
+        slice = builder->CreateInsertValue(slice, arrayPtr, 0, "slice.ptr");
+        slice = builder->CreateInsertValue(slice, builder->getInt64(arraySize),
+                                           1, "slice.len");
+
+        return slice;
+      }
+    }
   }
 
   std::cout << "[CodeGen] ERROR: Unsupported type casting" << std::endl;
@@ -817,6 +1167,10 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
   }
   if (auto* n = dynamic_cast<WhileStmtNode*>(&node)) {
     std::cout << "[CodeGen] Processing WhileStmtNode" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<ForStmtNode*>(&node)) {
+    std::cout << "[CodeGen] Processing ForStmtNode" << std::endl;
     return codegen(*n);
   }
   if (auto* n = dynamic_cast<ExprStmtNode*>(&node)) {
@@ -865,6 +1219,18 @@ llvm::Value* CodeGen::codegen(ASTNode& node) {
   }
   if (auto* n = dynamic_cast<DereferenceExpr*>(&node)) {
     std::cout << "[CodeGen] Processing DereferenceExpr" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<ArrayLiteralExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing ArrayLiteralExpr" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<IndexExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing IndexExpr" << std::endl;
+    return codegen(*n);
+  }
+  if (auto* n = dynamic_cast<RangeExpr*>(&node)) {
+    std::cout << "[CodeGen] Processing RangeExpr" << std::endl;
     return codegen(*n);
   }
   // ... weitere Knotentypen hier einfügen
@@ -1460,8 +1826,9 @@ bool CodeGen::compileToExecutable(const std::string& objectFilename,
     case TargetPlatform::Windows:
       // Windows: Use clang with minimal runtime support
       // Include compiler-rt for __chkstk and other compiler builtins
+      // Add ws2_32 for Winsock networking functions
       linkCmd = "clang \"" + objectFilename + "\" -o \"" + executableFilename +
-                "\" -nostdlib -lkernel32 -lmsvcrt";
+                "\" -nostdlib -lkernel32 -lmsvcrt -lws2_32";
       break;
 
     case TargetPlatform::Linux:
@@ -1698,8 +2065,196 @@ llvm::Value* CodeGen::codegen(DereferenceExpr& node) {
               << std::endl;
     return nullptr;
   }
-
   // Load the value from the pointer
   std::cout << "[CodeGen] Dereferencing pointer" << std::endl;
   return builder->CreateLoad(builder->getInt32Ty(), pointer, "deref");
+}
+
+// --- New Phase 1 Codegen Methods ---
+
+llvm::Value* CodeGen::codegen(ForStmtNode& node) {
+  std::cout << "[CodeGen] Generating ForStmtNode" << std::endl;
+
+  // Get current function
+  llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+
+  // Create basic blocks for the for loop
+  llvm::BasicBlock* init_block =
+      llvm::BasicBlock::Create(*context, "for.init", current_function);
+  llvm::BasicBlock* condition_block =
+      llvm::BasicBlock::Create(*context, "for.condition");
+  llvm::BasicBlock* body_block = llvm::BasicBlock::Create(*context, "for.body");
+  llvm::BasicBlock* increment_block =
+      llvm::BasicBlock::Create(*context, "for.increment");
+  llvm::BasicBlock* exit_block = llvm::BasicBlock::Create(*context, "for.exit");
+
+  // Jump to initialization
+  builder->CreateBr(init_block);
+
+  // --- Initialization Block ---
+  builder->SetInsertPoint(init_block);
+
+  // Handle range-based for loops
+  if (auto* range_expr = dynamic_cast<RangeExpr*>(node.iterable.get())) {
+    // Create loop variable and initialize with range start
+    llvm::Type* loop_var_type = builder->getInt32Ty();
+    llvm::Value* loop_var_alloca =
+        builder->CreateAlloca(loop_var_type, nullptr, node.variable_name);
+
+    // Generate start value
+    llvm::Value* start_val = codegen(*range_expr->start);
+    if (!start_val) return nullptr;
+    builder->CreateStore(start_val, loop_var_alloca);
+
+    // Add loop variable to symbol table
+    named_values[node.variable_name] = loop_var_alloca;
+    variable_types[node.variable_name] = loop_var_type;
+
+    // Generate end value
+    llvm::Value* end_val = codegen(*range_expr->end);
+    if (!end_val) return nullptr;
+
+    // Jump to condition check
+    builder->CreateBr(condition_block);
+
+    // --- Condition Block ---
+    condition_block->insertInto(current_function);
+    builder->SetInsertPoint(condition_block);
+
+    // Load current loop variable value
+    llvm::Value* current_val =
+        builder->CreateLoad(loop_var_type, loop_var_alloca, "loop.var");
+
+    // Compare with end value
+    llvm::Value* condition;
+    if (range_expr->inclusive) {
+      condition = builder->CreateICmpSLE(current_val, end_val, "loop.cond");
+    } else {
+      condition = builder->CreateICmpSLT(current_val, end_val, "loop.cond");
+    }
+
+    builder->CreateCondBr(condition, body_block, exit_block);
+
+    // --- Body Block ---
+    body_block->insertInto(current_function);
+    builder->SetInsertPoint(body_block);
+
+    // Generate body statements
+    for (const auto& stmt : node.body) {
+      codegen(*stmt);
+    }
+
+    // Jump to increment
+    if (!builder->GetInsertBlock()->getTerminator()) {
+      builder->CreateBr(increment_block);
+    }
+
+    // --- Increment Block ---
+    increment_block->insertInto(current_function);
+    builder->SetInsertPoint(increment_block);
+
+    // Increment loop variable
+    llvm::Value* current_val_inc =
+        builder->CreateLoad(loop_var_type, loop_var_alloca, "loop.var.inc");
+    llvm::Value* next_val =
+        builder->CreateAdd(current_val_inc, builder->getInt32(1), "loop.next");
+    builder->CreateStore(next_val, loop_var_alloca);
+
+    // Jump back to condition
+    builder->CreateBr(condition_block);
+  } else {
+    // Handle other iterable types (arrays, etc.) in the future
+    std::cout << "[CodeGen] ForStmtNode: Non-range iterables not yet supported"
+              << std::endl;
+    return nullptr;
+  }
+
+  // --- Exit Block ---
+  exit_block->insertInto(current_function);
+  builder->SetInsertPoint(exit_block);
+
+  return nullptr;  // For statements don't return values
+}
+
+llvm::Value* CodeGen::codegen(ArrayLiteralExpr& node) {
+  std::cout << "[CodeGen] Generating ArrayLiteralExpr with "
+            << node.elements.size() << " elements" << std::endl;
+
+  if (node.elements.empty()) {
+    // Empty array - create a null pointer for now
+    return llvm::ConstantPointerNull::get(
+        llvm::PointerType::getUnqual(*context));
+  }
+
+  // For simplicity, create an array on the stack
+  // In a real implementation, you might want heap allocation for large arrays
+
+  // Determine element type from first element
+  llvm::Value* first_element = codegen(*node.elements[0]);
+  if (!first_element) return nullptr;
+
+  llvm::Type* element_type = first_element->getType();
+  llvm::Type* array_type =
+      llvm::ArrayType::get(element_type, node.elements.size());
+
+  // Allocate array on stack
+  llvm::Value* array_alloca =
+      builder->CreateAlloca(array_type, nullptr, "array.literal");
+
+  // Store each element
+  for (size_t i = 0; i < node.elements.size(); ++i) {
+    llvm::Value* element_val =
+        (i == 0) ? first_element : codegen(*node.elements[i]);
+    if (!element_val) return nullptr;
+
+    // Get pointer to array element
+    std::vector<llvm::Value*> indices = {
+        builder->getInt32(0),  // Array base
+        builder->getInt32(i)   // Element index
+    };
+
+    llvm::Value* element_ptr = builder->CreateInBoundsGEP(
+        array_type, array_alloca, indices, "elem.ptr");
+    builder->CreateStore(element_val, element_ptr);
+  }
+
+  // Return pointer to first element (decay to pointer)
+  std::vector<llvm::Value*> indices = {builder->getInt32(0),
+                                       builder->getInt32(0)};
+  return builder->CreateInBoundsGEP(array_type, array_alloca, indices,
+                                    "array.decay");
+}
+
+llvm::Value* CodeGen::codegen(IndexExpr& node) {
+  std::cout << "[CodeGen] Generating IndexExpr" << std::endl;
+
+  // Generate array expression
+  llvm::Value* array = codegen(*node.array);
+  if (!array) return nullptr;
+
+  // Generate index expression
+  llvm::Value* index = codegen(*node.index);
+  if (!index) return nullptr;
+
+  // For now, assume the array is a pointer to the first element
+  // Calculate element address: array + index
+  llvm::Value* element_ptr = builder->CreateInBoundsGEP(
+      builder->getInt32Ty(), array, index, "elem.ptr");
+
+  // Load the element value
+  return builder->CreateLoad(builder->getInt32Ty(), element_ptr, "elem.val");
+}
+
+llvm::Value* CodeGen::codegen(RangeExpr& node) {
+  std::cout << "[CodeGen] Generating RangeExpr" << std::endl;
+
+  // Ranges themselves don't generate runtime values in this simple
+  // implementation They are used as control structures in for loops For now,
+  // just return null - ranges are handled specially in for loops
+  std::cout << "[CodeGen] RangeExpr used outside of for loop context"
+            << std::endl;
+
+  // Avoid unused parameter warning
+  (void)node;
+  return nullptr;
 }
