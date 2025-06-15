@@ -33,6 +33,14 @@ class Parser {
   std::unique_ptr<StmtNode> parseWhileStatement();
   std::unique_ptr<StmtNode> parseForStatement();
   std::unique_ptr<StmtNode> parseFunctionDeclaration();
+  std::unique_ptr<StmtNode> parseStructDeclaration();
+  std::unique_ptr<StmtNode> parseUnionDeclaration();
+  std::unique_ptr<StmtNode> parseStructDeclarationWithAttributes(
+      std::vector<std::unique_ptr<AttributeNode>> attributes);
+  std::unique_ptr<StmtNode> parseUnionDeclarationWithAttributes(
+      std::vector<std::unique_ptr<AttributeNode>> attributes);
+  std::unique_ptr<AttributeNode> parseAttribute();
+  std::vector<std::unique_ptr<AttributeNode>> parseAttributes();
   std::unique_ptr<StmtNode> parseReturnStatement();
   std::unique_ptr<StmtNode> parseDeferStatement();
   std::unique_ptr<StmtNode> parseUnsafeBlock();
@@ -42,6 +50,10 @@ class Parser {
   std::unique_ptr<ExprNode> parseAssignment();
   std::unique_ptr<ExprNode> parseEquality();
   std::unique_ptr<ExprNode> parseComparison();
+  std::unique_ptr<ExprNode> parseBitwiseOr();
+  std::unique_ptr<ExprNode> parseBitwiseXor();
+  std::unique_ptr<ExprNode> parseBitwiseAnd();
+  std::unique_ptr<ExprNode> parseShift();
   std::unique_ptr<ExprNode> parseTerm();
   std::unique_ptr<ExprNode> parseFactor();
   std::unique_ptr<ExprNode> parseUnary();
@@ -50,6 +62,9 @@ class Parser {
   std::unique_ptr<ExprNode> parsePrimary();
   std::unique_ptr<ExprNode> parseBuiltinCall();
   std::unique_ptr<ExprNode> parseArrayLiteral();
+  std::unique_ptr<ExprNode> parseCastExpression();
+  std::unique_ptr<ExprNode> parseStructLiteral(const std::string& struct_name,
+                                               const LoomSourceLocation& loc);
   std::unique_ptr<ExprNode> parseRange();
   std::unique_ptr<ExprNode> finishCall(std::unique_ptr<ExprNode> callee);
   std::unique_ptr<TypeNode> parseType();

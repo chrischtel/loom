@@ -41,6 +41,16 @@ enum class TokenType {
   TOKEN_AT,             // @ (array literal prefix)
   TOKEN_IN,             // in (for loop iterator)
 
+  // Bitwise operators
+  TOKEN_LEFT_SHIFT,   // << (left shift)
+  TOKEN_RIGHT_SHIFT,  // >> (right shift)
+  TOKEN_BITWISE_AND,  // & (bitwise and) - note: conflicts with reference, need
+                      // context
+  TOKEN_BITWISE_OR,   // | (bitwise or)
+  TOKEN_BITWISE_XOR,  // ^ (bitwise xor) - note: conflicts with owned pointer,
+                      // need context
+  TOKEN_BITWISE_NOT,  // ~ (bitwise not)
+
   // Literals
   TOKEN_NUMBER_INT,
   TOKEN_NUMBER_FLOAT,
@@ -65,6 +75,10 @@ enum class TokenType {
   TOKEN_KEYWORD_UNSAFE,  // unsafe block
   TOKEN_KEYWORD_STATIC,  // static allocation
   TOKEN_KEYWORD_NULL,    // null literal
+  TOKEN_KEYWORD_STRUCT,  // struct declaration
+  TOKEN_KEYWORD_CAST,    // cast expression
+  TOKEN_KEYWORD_UNION,   // union declaration
+  TOKEN_KEYWORD_PACKED,  // packed attribute
 
   // Specials
   TOKEN_ERROR

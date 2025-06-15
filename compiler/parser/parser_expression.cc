@@ -15,8 +15,11 @@ std::unique_ptr<ExprNode> Parser::parseAssignment() {
     const LoomToken& equals = previous();
     std::unique_ptr<ExprNode> value = parseAssignment();
 
-    if (Identifier* target = dynamic_cast<Identifier*>(expr.get())) {
-      return std::make_unique<AssignmentExpr>(target->location, target->name,
+    // Check if the target is a valid lvalue
+    if (dynamic_cast<Identifier*>(expr.get()) ||
+        dynamic_cast<MemberAccessExpr*>(expr.get()) ||
+        dynamic_cast<IndexExpr*>(expr.get())) {
+      return std::make_unique<AssignmentExpr>(equals.location, std::move(expr),
                                               std::move(value));
     }
 
@@ -44,11 +47,11 @@ std::unique_ptr<ExprNode> Parser::parseRange() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseEquality() {
-  std::unique_ptr<ExprNode> expr = parseComparison();
+  std::unique_ptr<ExprNode> expr = parseBitwiseOr();
 
   while (match(TokenType::TOKEN_EQUAL_EQUAL)) {
     const LoomToken& op = previous();
-    std::unique_ptr<ExprNode> right = parseTerm();
+    std::unique_ptr<ExprNode> right = parseBitwiseOr();
     expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
   }
 
@@ -56,23 +59,23 @@ std::unique_ptr<ExprNode> Parser::parseEquality() {
 }
 
 std::unique_ptr<ExprNode> Parser::parseComparison() {
-  std::unique_ptr<ExprNode> expr = parseTerm();
+  std::unique_ptr<ExprNode> expr = parseBitwiseXor();
   while (match(TokenType::TOKEN_LESS) || match(TokenType::TOKEN_GREATER) ||
          match(TokenType::TOKEN_LESS_EQUAL) ||
          match(TokenType::TOKEN_GREATER_EQUAL)) {
     const LoomToken& op = previous();
-    std::unique_ptr<ExprNode> right = parseTerm();
+    std::unique_ptr<ExprNode> right = parseBitwiseXor();
     expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
   }
   return expr;
 }
 
 std::unique_ptr<ExprNode> Parser::parseTerm() {
-  std::unique_ptr<ExprNode> expr = parseFactor();
+  std::unique_ptr<ExprNode> expr = parseShift();
 
   while (match(TokenType::TOKEN_PLUS) || match(TokenType::TOKEN_MINUS)) {
     const LoomToken& op = previous();
-    std::unique_ptr<ExprNode> right = parseFactor();  // Parse den rechten Teil
+    std::unique_ptr<ExprNode> right = parseShift();  // Parse den rechten Teil
     expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
   }
 
@@ -107,9 +110,9 @@ std::unique_ptr<ExprNode> Parser::parseUnary() {
     return std::make_unique<DereferenceExpr>(op.location, std::move(right),
                                              op.type);
   }
-
   // Handle traditional unary operators
-  if (match(TokenType::TOKEN_MINUS) || match(TokenType::TOKEN_BANG)) {
+  if (match(TokenType::TOKEN_MINUS) || match(TokenType::TOKEN_BANG) ||
+      match(TokenType::TOKEN_BITWISE_NOT)) {
     const LoomToken& op = previous();
     std::unique_ptr<ExprNode> right = parseUnary();
     return std::make_unique<UnaryExpr>(op, std::move(right));
@@ -128,6 +131,12 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
   }
   if (match(TokenType::TOKEN_IDENTIFIER)) {
     const LoomToken& token = previous();
+
+    // Check for struct literal: StructName { ... }
+    if (check(TokenType::TOKEN_LEFT_BRACE)) {
+      return parseStructLiteral(token.value, token.location);
+    }
+
     return std::make_unique<Identifier>(token.location, token.value);
   }
   if (match(TokenType::TOKEN_BUILTIN)) {
@@ -148,10 +157,14 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
     return std::make_unique<Identifier>(
         token.location, "null");  // For now, treat as identifier
   }
-
   // Array literal: @[1, 2, 3]
   if (match(TokenType::TOKEN_AT)) {
     return parseArrayLiteral();
+  }
+
+  // Cast expression: cast(Type, expression)
+  if (match(TokenType::TOKEN_KEYWORD_CAST)) {
+    return parseCastExpression();
   }
 
   if (match(TokenType::TOKEN_LEFT_PAREN)) {
@@ -167,7 +180,7 @@ std::unique_ptr<ExprNode> Parser::parsePrimary() {
 }
 
 std::unique_ptr<TypeNode> Parser::parseType() {
-  // Handle memory model prefix types: &T, ^T, []T
+  // Handle memory model prefix types: &T, ^T, *T, []T
   if (match(TokenType::TOKEN_AMPERSAND)) {
     // Reference type: &T
     LoomSourceLocation loc = previous().location;
@@ -180,6 +193,13 @@ std::unique_ptr<TypeNode> Parser::parseType() {
     LoomSourceLocation loc = previous().location;
     auto inner_type = parseType();
     return std::make_unique<OwnedPointerTypeNode>(loc, std::move(inner_type));
+  }
+
+  if (match(TokenType::TOKEN_STAR)) {
+    // Raw pointer type: *T
+    LoomSourceLocation loc = previous().location;
+    auto inner_type = parseType();
+    return std::make_unique<RawPointerTypeNode>(loc, std::move(inner_type));
   }
 
   if (match(TokenType::TOKEN_LEFT_BRACKET)) {
@@ -230,7 +250,6 @@ std::unique_ptr<TypeNode> Parser::parseType() {
       }
     }
   }
-
   // Handle special types if base_type wasn't set
   if (!base_type) {
     if (type_name == "bool") {
@@ -238,9 +257,10 @@ std::unique_ptr<TypeNode> Parser::parseType() {
     } else if (type_name == "string") {
       base_type = std::make_unique<StringTypeNode>(type_token.location);
     } else {
-      // For now, treat unknown types as generic TypeNodes
-      // In a real compiler, this would be an error
-      throw std::runtime_error("Unknown type: " + type_name);
+      // Check if it's a union or struct type - for now, assume struct
+      // TODO: Add proper union/struct type resolution using symbol table
+      base_type =
+          std::make_unique<StructTypeNode>(type_token.location, type_name);
     }
   }
 
@@ -286,13 +306,22 @@ std::unique_ptr<ExprNode> Parser::parsePostfix() {
       expr = std::make_unique<PointerAccessExpr>(arrow.location,
                                                  std::move(expr), field.value);
     } else if (match(TokenType::TOKEN_AT)) {
-      // Index access: expr@[index]
+      // Index access: expr@[index] (original @ syntax for compatibility)
       const LoomToken& at = previous();
       consume(TokenType::TOKEN_LEFT_BRACKET, "Expected '[' after '@'");
       std::unique_ptr<ExprNode> index = parseExpression();
       consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array index");
       expr = std::make_unique<IndexExpr>(at.location, std::move(expr),
-                                         std::move(index));
+                                         std::move(index),
+                                         true);  // use_at_syntax = true
+    } else if (match(TokenType::TOKEN_LEFT_BRACKET)) {
+      // Traditional array indexing: expr[index]
+      const LoomToken& bracket = previous();
+      std::unique_ptr<ExprNode> index = parseExpression();
+      consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array index");
+      expr = std::make_unique<IndexExpr>(bracket.location, std::move(expr),
+                                         std::move(index),
+                                         false);  // use_at_syntax = false
     } else {
       break;
     }
@@ -362,4 +391,134 @@ std::unique_ptr<ExprNode> Parser::parseArrayLiteral() {
   consume(TokenType::TOKEN_RIGHT_BRACKET, "Expected ']' after array elements");
   return std::make_unique<ArrayLiteralExpr>(at_token.location,
                                             std::move(elements));
+}
+
+// Parse struct literal: StructName { field1: value1, field2: value2 }
+std::unique_ptr<ExprNode> Parser::parseStructLiteral(
+    const std::string& struct_name, const LoomSourceLocation& loc) {
+  consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after struct name");
+
+  std::vector<std::pair<std::string, std::unique_ptr<ExprNode>>> field_values;
+
+  // Handle empty struct
+  if (!check(TokenType::TOKEN_RIGHT_BRACE)) {
+    do {
+      // Skip newlines
+      while (match(TokenType::TOKEN_NEWLINE)) {
+      }
+
+      if (check(TokenType::TOKEN_RIGHT_BRACE)) break;
+
+      // Parse field: name: value
+      consume(TokenType::TOKEN_IDENTIFIER, "Expected field name");
+      std::string field_name = previous().value;
+
+      consume(TokenType::TOKEN_COLON, "Expected ':' after field name");
+
+      std::unique_ptr<ExprNode> value = parseExpression();
+
+      field_values.emplace_back(field_name, std::move(value));
+
+      // Optional comma
+      if (!match(TokenType::TOKEN_COMMA)) {
+        break;
+      }
+    } while (true);
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields");
+
+  return std::make_unique<StructLiteralExpr>(loc, struct_name,
+                                             std::move(field_values));
+}
+
+// Parse cast expression: cast(Type, expression)
+std::unique_ptr<ExprNode> Parser::parseCastExpression() {
+  const LoomToken& cast_token = previous();
+
+  consume(TokenType::TOKEN_LEFT_PAREN, "Expected '(' after 'cast'");
+
+  // Parse target type
+  std::unique_ptr<TypeNode> target_type = parseType();
+  if (!target_type) {
+    error(peek(), "Expected type in cast expression");
+    return nullptr;
+  }
+
+  consume(TokenType::TOKEN_COMMA, "Expected ',' after cast target type");
+
+  // Parse expression to cast
+  std::unique_ptr<ExprNode> expression = parseExpression();
+  if (!expression) {
+    error(peek(), "Expected expression in cast");
+    return nullptr;
+  }
+
+  consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after cast expression");
+
+  return std::make_unique<CastExpr>(cast_token.location, std::move(target_type),
+                                    std::move(expression));
+}
+
+std::unique_ptr<ExprNode> Parser::parseBitwiseOr() {
+  std::unique_ptr<ExprNode> expr = parseComparison();
+
+  while (match(TokenType::TOKEN_BITWISE_OR)) {
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseComparison();
+    expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+  }
+
+  return expr;
+}
+
+std::unique_ptr<ExprNode> Parser::parseBitwiseXor() {
+  std::unique_ptr<ExprNode> expr = parseBitwiseAnd();
+
+  while (match(TokenType::TOKEN_HAT)) {  // ^ is context-sensitive, use as
+                                         // bitwise XOR in expressions
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseBitwiseAnd();
+    expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+  }
+
+  return expr;
+}
+
+std::unique_ptr<ExprNode> Parser::parseBitwiseAnd() {
+  std::unique_ptr<ExprNode> expr = parseShift();
+
+  // Note: & is context-sensitive - in expressions it's bitwise AND, as unary
+  // it's reference
+  while (check(TokenType::TOKEN_AMPERSAND)) {
+    // Lookahead to distinguish bitwise AND from reference
+    // If next token suggests binary operation, treat as bitwise AND
+    if (current + 1 < tokens.size() &&
+        (tokens[current + 1].type == TokenType::TOKEN_IDENTIFIER ||
+         tokens[current + 1].type == TokenType::TOKEN_NUMBER_INT ||
+         tokens[current + 1].type == TokenType::TOKEN_LEFT_PAREN)) {
+      advance();  // consume &
+      const LoomToken& op = previous();
+      std::unique_ptr<ExprNode> right = parseShift();
+      expr =
+          std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+    } else {
+      break;  // Leave for unary reference parsing
+    }
+  }
+
+  return expr;
+}
+
+std::unique_ptr<ExprNode> Parser::parseShift() {
+  std::unique_ptr<ExprNode> expr = parseFactor();
+
+  while (match(TokenType::TOKEN_LEFT_SHIFT) ||
+         match(TokenType::TOKEN_RIGHT_SHIFT)) {
+    const LoomToken& op = previous();
+    std::unique_ptr<ExprNode> right = parseFactor();
+    expr = std::make_unique<BinaryExpr>(std::move(expr), op, std::move(right));
+  }
+
+  return expr;
 }

@@ -222,6 +222,285 @@ llvm::Value* SyscallFramework::generateWindowsSyscall(
           });
     }
 
+      // ============================================================================
+      // NETWORKING SYSCALLS
+      // ============================================================================
+
+    case SyscallType::SOCKET: {
+      if (args.size() < 3)
+        throw std::runtime_error("SOCKET requires family, type, protocol");
+
+      llvm::Function* socketFunc = module->getFunction("socket");
+      if (!socketFunc) {
+        llvm::FunctionType* socketType = llvm::FunctionType::get(
+            // FIX: SOCKET is i64 on 64-bit Windows
+            builder->getInt64Ty(),
+            {builder->getInt32Ty(), builder->getInt32Ty(),
+             builder->getInt32Ty()},
+            false);
+        socketFunc = llvm::Function::Create(
+            socketType, llvm::Function::ExternalLinkage, "socket", module);
+      }
+
+      llvm::Value* family = args[0];
+      llvm::Value* type = args[1];
+      llvm::Value* protocol = args[2];
+
+      if (family->getType()->isIntegerTy(64))
+        family = builder->CreateTrunc(family, builder->getInt32Ty());
+      if (type->getType()->isIntegerTy(64))
+        type = builder->CreateTrunc(type, builder->getInt32Ty());
+      if (protocol->getType()->isIntegerTy(64))
+        protocol = builder->CreateTrunc(protocol, builder->getInt32Ty());
+
+      return builder->CreateCall(socketFunc, {family, type, protocol});
+    }
+
+    case SyscallType::BIND: {
+      if (args.size() < 3)
+        throw std::runtime_error(
+            "BIND requires socket, address, address_length");
+
+      llvm::Function* bindFunc = module->getFunction("bind");
+      if (!bindFunc) {
+        llvm::FunctionType* bindType = llvm::FunctionType::get(
+            builder->getInt32Ty(),
+            {// FIX: Socket is i64
+             builder->getInt64Ty(), llvm::PointerType::getUnqual(*context),
+             builder->getInt32Ty()},
+            false);
+        bindFunc = llvm::Function::Create(
+            bindType, llvm::Function::ExternalLinkage, "bind", module);
+      }
+
+      // NO LONGER TRUNCATE SOCKET
+      return builder->CreateCall(bindFunc, {args[0], args[1], args[2]});
+    }
+
+    case SyscallType::LISTEN: {
+      if (args.size() < 2)
+        throw std::runtime_error("LISTEN requires socket, backlog");
+
+      llvm::Function* listenFunc = module->getFunction("listen");
+      if (!listenFunc) {
+        llvm::FunctionType* listenType = llvm::FunctionType::get(
+            builder->getInt32Ty(),
+            {// FIX: Socket is i64
+             builder->getInt64Ty(), builder->getInt32Ty()},
+            false);
+        listenFunc = llvm::Function::Create(
+            listenType, llvm::Function::ExternalLinkage, "listen", module);
+      }
+
+      // NO LONGER TRUNCATE SOCKET
+      return builder->CreateCall(listenFunc, {args[0], args[1]});
+    }
+
+    case SyscallType::ACCEPT: {
+      if (args.size() < 3)
+        throw std::runtime_error(
+            "ACCEPT requires socket, address, address_length");
+
+      llvm::Function* acceptFunc = module->getFunction("accept");
+      if (!acceptFunc) {
+        llvm::FunctionType* acceptType = llvm::FunctionType::get(
+            // FIX: Return SOCKET is i64
+            builder->getInt64Ty(),
+            {// FIX: Socket is i64
+             builder->getInt64Ty(), llvm::PointerType::getUnqual(*context),
+             llvm::PointerType::getUnqual(*context)},
+            false);
+        acceptFunc = llvm::Function::Create(
+            acceptType, llvm::Function::ExternalLinkage, "accept", module);
+      }
+
+      // NO LONGER TRUNCATE SOCKET
+      return builder->CreateCall(acceptFunc, {args[0], args[1], args[2]});
+    }
+
+    case SyscallType::CONNECT: {
+      if (args.size() < 3)
+        throw std::runtime_error(
+            "CONNECT requires socket, address, address_length");
+
+      llvm::Function* connectFunc = module->getFunction("connect");
+      if (!connectFunc) {
+        llvm::FunctionType* connectType = llvm::FunctionType::get(
+            builder->getInt32Ty(),  // int return type
+            {
+                builder->getInt32Ty(),                   // socket
+                llvm::PointerType::getUnqual(*context),  // sockaddr*
+                builder->getInt32Ty()                    // address length
+            },
+            false);
+        connectFunc = llvm::Function::Create(
+            connectType, llvm::Function::ExternalLinkage, "connect", module);
+      }
+
+      llvm::Value* socket = args[0];
+      llvm::Value* addrlen = args[2];
+
+      if (socket->getType()->isIntegerTy(64)) {
+        socket = builder->CreateTrunc(socket, builder->getInt32Ty());
+      }
+      if (addrlen->getType()->isIntegerTy(64)) {
+        addrlen = builder->CreateTrunc(addrlen, builder->getInt32Ty());
+      }
+
+      return builder->CreateCall(connectFunc, {socket, args[1], addrlen},
+                                 "connect_result");
+    }
+
+    case SyscallType::SEND: {
+      if (args.size() < 4)
+        throw std::runtime_error("SEND requires socket, buffer, length, flags");
+
+      llvm::Function* sendFunc = module->getFunction("send");
+      if (!sendFunc) {
+        llvm::FunctionType* sendType = llvm::FunctionType::get(
+            builder->getInt32Ty(),  // int return type (bytes sent)
+            {
+                builder->getInt32Ty(),                   // socket
+                llvm::PointerType::getUnqual(*context),  // buffer
+                builder->getInt32Ty(),                   // length
+                builder->getInt32Ty()                    // flags
+            },
+            false);
+        sendFunc = llvm::Function::Create(
+            sendType, llvm::Function::ExternalLinkage, "send", module);
+      }
+
+      llvm::Value* socket = args[0];
+      llvm::Value* length = args[2];
+      llvm::Value* flags = args[3];
+
+      if (socket->getType()->isIntegerTy(64)) {
+        socket = builder->CreateTrunc(socket, builder->getInt32Ty());
+      }
+      if (length->getType()->isIntegerTy(64)) {
+        length = builder->CreateTrunc(length, builder->getInt32Ty());
+      }
+      if (flags->getType()->isIntegerTy(64)) {
+        flags = builder->CreateTrunc(flags, builder->getInt32Ty());
+      }
+
+      return builder->CreateCall(sendFunc, {socket, args[1], length, flags},
+                                 "send_result");
+    }
+
+    case SyscallType::RECV: {
+      if (args.size() < 4)
+        throw std::runtime_error("RECV requires socket, buffer, length, flags");
+
+      llvm::Function* recvFunc = module->getFunction("recv");
+      if (!recvFunc) {
+        llvm::FunctionType* recvType = llvm::FunctionType::get(
+            builder->getInt32Ty(),  // int return type (bytes received)
+            {
+                builder->getInt32Ty(),                   // socket
+                llvm::PointerType::getUnqual(*context),  // buffer
+                builder->getInt32Ty(),                   // length
+                builder->getInt32Ty()                    // flags
+            },
+            false);
+        recvFunc = llvm::Function::Create(
+            recvType, llvm::Function::ExternalLinkage, "recv", module);
+      }
+
+      llvm::Value* socket = args[0];
+      llvm::Value* length = args[2];
+      llvm::Value* flags = args[3];
+
+      if (socket->getType()->isIntegerTy(64)) {
+        socket = builder->CreateTrunc(socket, builder->getInt32Ty());
+      }
+      if (length->getType()->isIntegerTy(64)) {
+        length = builder->CreateTrunc(length, builder->getInt32Ty());
+      }
+      if (flags->getType()->isIntegerTy(64)) {
+        flags = builder->CreateTrunc(flags, builder->getInt32Ty());
+      }
+      return builder->CreateCall(recvFunc, {socket, args[1], length, flags},
+                                 "recv_result");
+    }
+
+    case SyscallType::HTONS: {
+      if (args.empty()) {
+        throw std::runtime_error("HTONS requires one 16-bit argument");
+      }
+
+      llvm::Value* host_short = args[0];
+      if (!host_short->getType()->isIntegerTy(16)) {
+        host_short = builder->CreateTrunc(host_short, builder->getInt16Ty(),
+                                          "host_short_trunc");
+      }
+
+      llvm::Function* bswap_func = llvm::Intrinsic::getOrInsertDeclaration(
+          module, llvm::Intrinsic::bswap, {builder->getInt16Ty()});
+
+      return builder->CreateCall(bswap_func, {host_short}, "network_short");
+    }
+
+    case SyscallType::GENERIC: {
+      // For WSAStartup (args: version, wsadata*)
+      if (args.size() == 2) {
+        std::string funcName = "WSAStartup";
+        llvm::Function* wsaStartupFunc = module->getFunction(funcName);
+        if (!wsaStartupFunc) {
+          llvm::FunctionType* wsaStartupType = llvm::FunctionType::get(
+              builder->getInt32Ty(),
+              {builder->getInt16Ty(),  // version (WORD)
+                                       // FIX: Use the type of the POINTER
+                                       // argument (args[1])
+               args[1]->getType()},
+              false);
+          wsaStartupFunc = llvm::Function::Create(
+              wsaStartupType, llvm::Function::ExternalLinkage, funcName,
+              module);
+        }
+
+        llvm::Value* version = args[0];
+        if (version->getType()->isIntegerTy(64)) {
+          version = builder->CreateTrunc(version, builder->getInt16Ty());
+        } else if (version->getType()->isIntegerTy(32)) {
+          version = builder->CreateTrunc(version, builder->getInt16Ty());
+        }
+
+        // Call with correct order: version, pointer
+        return builder->CreateCall(wsaStartupFunc, {version, args[1]});
+      }
+      // For WSACleanup (no args)
+      else if (args.size() == 0) {
+        llvm::Function* wsaCleanupFunc = module->getFunction("WSACleanup");
+        if (!wsaCleanupFunc) {
+          llvm::FunctionType* wsaCleanupType =
+              llvm::FunctionType::get(builder->getInt32Ty(), {}, false);
+          wsaCleanupFunc = llvm::Function::Create(
+              wsaCleanupType, llvm::Function::ExternalLinkage, "WSACleanup",
+              module);
+        }
+        return builder->CreateCall(wsaCleanupFunc, {});
+      }
+      // For closesocket (args: socket)
+      else if (args.size() == 1) {
+        llvm::Function* closesocketFunc = module->getFunction("closesocket");
+        if (!closesocketFunc) {
+          llvm::FunctionType* closesocketType =
+              llvm::FunctionType::get(builder->getInt32Ty(),
+                                      {// FIX: Socket is i64
+                                       builder->getInt64Ty()},
+                                      false);
+          closesocketFunc = llvm::Function::Create(
+              closesocketType, llvm::Function::ExternalLinkage, "closesocket",
+              module);
+        }
+        // NO LONGER TRUNCATE SOCKET
+        return builder->CreateCall(closesocketFunc, {args[0]});
+      } else {
+        throw std::runtime_error("Unsupported GENERIC syscall argument count");
+      }
+    }
+
     default:
       throw std::runtime_error("Unsupported Windows syscall type");
   }

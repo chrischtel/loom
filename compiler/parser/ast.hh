@@ -17,6 +17,7 @@ class BooleanLiteral;
 class AssignmentExpr;
 class BinaryExpr;
 class UnaryExpr;
+class CastExpr;
 class VarDeclNode;
 class ExprStmtNode;
 class IfStmtNode;
@@ -36,9 +37,24 @@ class FunctionDeclNode;
 class ParameterNode;
 class ReturnStmtNode;
 
+// Struct-related nodes
+class StructDeclNode;
+class FieldDeclNode;
+class StructTypeNode;
+class StructLiteralExpr;
+
+// Union-related nodes
+class UnionDeclNode;
+class UnionTypeNode;
+class UnionLiteralExpr;
+
+// Attribute nodes
+class AttributeNode;
+
 // Memory model nodes
 class ReferenceTypeNode;
 class OwnedPointerTypeNode;
+class RawPointerTypeNode;
 class NullableTypeNode;
 class SliceTypeNode;
 class ReferenceExpr;
@@ -61,6 +77,7 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(AssignmentExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(BinaryExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(UnaryExpr& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(CastExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(VarDeclNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FunctionDeclNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(ParameterNode& node) = 0;
@@ -71,6 +88,20 @@ class ASTVisitor {
   virtual std::unique_ptr<TypeNode> visit(ForStmtNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FunctionCallExpr& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(BuiltinCallExpr& node) = 0;
+  // Struct-related visitors
+  virtual std::unique_ptr<TypeNode> visit(StructDeclNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(FieldDeclNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(StructTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(StructLiteralExpr& node) = 0;
+
+  // Union-related visitors
+  virtual std::unique_ptr<TypeNode> visit(UnionDeclNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(UnionTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(UnionLiteralExpr& node) = 0;
+
+  // Attribute visitors
+  virtual std::unique_ptr<TypeNode> visit(AttributeNode& node) = 0;
+
   virtual std::unique_ptr<TypeNode> visit(TypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(IntegerTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(FloatTypeNode& node) = 0;
@@ -83,6 +114,7 @@ class ASTVisitor {
   // Memory model visitors
   virtual std::unique_ptr<TypeNode> visit(ReferenceTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(OwnedPointerTypeNode& node) = 0;
+  virtual std::unique_ptr<TypeNode> visit(RawPointerTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(NullableTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(SliceTypeNode& node) = 0;
   virtual std::unique_ptr<TypeNode> visit(ReferenceExpr& node) = 0;
@@ -440,6 +472,39 @@ class OwnedPointerTypeNode : public TypeNode {
   }
 };
 
+// Raw pointer type: *T
+class RawPointerTypeNode : public TypeNode {
+ public:
+  std::unique_ptr<TypeNode> pointed_type;
+
+  RawPointerTypeNode(const LoomSourceLocation& loc,
+                     std::unique_ptr<TypeNode> type)
+      : TypeNode(loc), pointed_type(std::move(type)) {}
+
+  std::string toString() const override {
+    return "*" + pointed_type->toString();
+  }
+
+  std::string getTypeName() const override {
+    return "raw_" + pointed_type->getTypeName();
+  }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_raw = dynamic_cast<const RawPointerTypeNode*>(other)) {
+      return pointed_type->isEqualTo(other_raw->pointed_type.get());
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
 // Nullable type: T?
 class NullableTypeNode : public TypeNode {
  public:
@@ -492,6 +557,60 @@ class SliceTypeNode : public TypeNode {
   bool isEqualTo(const TypeNode* other) const override {
     if (auto other_slice = dynamic_cast<const SliceTypeNode*>(other)) {
       return element_type->isEqualTo(other_slice->element_type.get());
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Struct type: struct_name
+class StructTypeNode : public TypeNode {
+ public:
+  std::string struct_name;
+
+  StructTypeNode(const LoomSourceLocation& loc, const std::string& name)
+      : TypeNode(loc), struct_name(name) {}
+
+  std::string toString() const override { return struct_name; }
+
+  std::string getTypeName() const override { return struct_name; }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_struct = dynamic_cast<const StructTypeNode*>(other)) {
+      return struct_name == other_struct->struct_name;
+    }
+    return false;
+  }
+
+  bool canAcceptFrom(const TypeNode* other) const override {
+    return isEqualTo(other);
+  }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Union type: union_name
+class UnionTypeNode : public TypeNode {
+ public:
+  std::string union_name;
+
+  UnionTypeNode(const LoomSourceLocation& loc, const std::string& name)
+      : TypeNode(loc), union_name(name) {}
+
+  std::string toString() const override { return union_name; }
+
+  std::string getTypeName() const override { return union_name; }
+
+  bool isEqualTo(const TypeNode* other) const override {
+    if (auto other_union = dynamic_cast<const UnionTypeNode*>(other)) {
+      return union_name == other_union->union_name;
     }
     return false;
   }
@@ -561,14 +680,25 @@ class StringLiteral : public ExprNode {
 
 class AssignmentExpr : public ExprNode {
  public:
-  std::string name;
+  std::unique_ptr<ExprNode>
+      target;  // Can be Identifier, MemberAccessExpr, IndexExpr, etc.
   std::unique_ptr<ExprNode> value;
-  AssignmentExpr(const LoomSourceLocation& loc, const std::string& n,
+
+  // Constructor for backward compatibility with simple variable names
+  AssignmentExpr(const LoomSourceLocation& loc, const std::string& name,
                  std::unique_ptr<ExprNode> v)
-      : ExprNode(loc), name(n), value(std::move(v)) {}
+      : ExprNode(loc),
+        target(std::make_unique<Identifier>(loc, name)),
+        value(std::move(v)) {}
+
+  // Constructor for general lvalue expressions
+  AssignmentExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> t,
+                 std::unique_ptr<ExprNode> v)
+      : ExprNode(loc), target(std::move(t)), value(std::move(v)) {}
+
   std::string toString() const override {
-    return "Assignment(" + name + " = " + (value ? value->toString() : "null") +
-           ")";
+    return "Assignment(" + (target ? target->toString() : "null") + " = " +
+           (value ? value->toString() : "null") + ")";
   }
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
     return visitor.visit(*this);
@@ -602,6 +732,27 @@ class UnaryExpr : public ExprNode {
     return "Unary(" + op.value + " " + (right ? right->toString() : "null") +
            ")";
   }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+class CastExpr : public ExprNode {
+ public:
+  std::unique_ptr<TypeNode> target_type;
+  std::unique_ptr<ExprNode> expression;
+
+  CastExpr(const LoomSourceLocation& loc, std::unique_ptr<TypeNode> type,
+           std::unique_ptr<ExprNode> expr)
+      : ExprNode(loc),
+        target_type(std::move(type)),
+        expression(std::move(expr)) {}
+
+  std::string toString() const override {
+    return "Cast(" + (target_type ? target_type->toString() : "null") + ", " +
+           (expression ? expression->toString() : "null") + ")";
+  }
+
   std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
     return visitor.visit(*this);
   }
@@ -678,6 +829,114 @@ class FunctionDeclNode : public StmtNode {
       result += body[i] ? body[i]->toString() : "null";
     }
     result += "})";
+    return result;
+  }
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Field declaration for struct
+class FieldDeclNode : public ASTNode {
+ public:
+  std::string name;
+  std::unique_ptr<TypeNode> type;
+
+  FieldDeclNode(const LoomSourceLocation& loc, const std::string& field_name,
+                std::unique_ptr<TypeNode> field_type)
+      : ASTNode(loc), name(field_name), type(std::move(field_type)) {}
+
+  std::string toString() const override {
+    return name + ": " + (type ? type->toString() : "unknown");
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Struct declaration node
+class StructDeclNode : public StmtNode {
+ public:
+  std::string name;
+  std::vector<std::unique_ptr<FieldDeclNode>> fields;
+  std::vector<std::unique_ptr<AttributeNode>> attributes;
+
+  StructDeclNode(
+      const LoomSourceLocation& loc, const std::string& struct_name,
+      std::vector<std::unique_ptr<FieldDeclNode>> struct_fields,
+      std::vector<std::unique_ptr<AttributeNode>> struct_attributes = {})
+      : StmtNode(loc),
+        name(struct_name),
+        fields(std::move(struct_fields)),
+        attributes(std::move(struct_attributes)) {}
+
+  std::string toString() const override {
+    std::string result = "StructDecl(" + name + " {";
+    for (size_t i = 0; i < fields.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += fields[i] ? fields[i]->toString() : "null";
+    }
+    result += "})";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Union declaration node
+class UnionDeclNode : public StmtNode {
+ public:
+  std::string name;
+  std::vector<std::unique_ptr<FieldDeclNode>> fields;
+  std::vector<std::unique_ptr<AttributeNode>> attributes;
+
+  UnionDeclNode(
+      const LoomSourceLocation& loc, const std::string& union_name,
+      std::vector<std::unique_ptr<FieldDeclNode>> union_fields,
+      std::vector<std::unique_ptr<AttributeNode>> union_attributes = {})
+      : StmtNode(loc),
+        name(union_name),
+        fields(std::move(union_fields)),
+        attributes(std::move(union_attributes)) {}
+
+  std::string toString() const override {
+    std::string result = "UnionDecl(" + name + " {";
+    for (size_t i = 0; i < fields.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += fields[i] ? fields[i]->toString() : "null";
+    }
+    result += "})";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Attribute node for @packed, etc.
+class AttributeNode : public ASTNode {
+ public:
+  std::string name;
+  std::vector<std::string> parameters;
+
+  AttributeNode(const LoomSourceLocation& loc, const std::string& attr_name,
+                std::vector<std::string> params = {})
+      : ASTNode(loc), name(attr_name), parameters(std::move(params)) {}
+
+  std::string toString() const override {
+    std::string result = "@" + name;
+    if (!parameters.empty()) {
+      result += "(";
+      for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += parameters[i];
+      }
+      result += ")";
+    }
     return result;
   }
 
@@ -1005,18 +1264,23 @@ class ArrayLiteralExpr : public ExprNode {
   }
 };
 
-// Index expression: arr@[index]
+// Index expression: arr[index] or arr@[index]
 class IndexExpr : public ExprNode {
  public:
   std::unique_ptr<ExprNode> array;
   std::unique_ptr<ExprNode> index;
+  bool use_at_syntax;  // true for @[index], false for [index]
 
   IndexExpr(const LoomSourceLocation& loc, std::unique_ptr<ExprNode> arr,
-            std::unique_ptr<ExprNode> idx)
-      : ExprNode(loc), array(std::move(arr)), index(std::move(idx)) {}
+            std::unique_ptr<ExprNode> idx, bool at_syntax = false)
+      : ExprNode(loc),
+        array(std::move(arr)),
+        index(std::move(idx)),
+        use_at_syntax(at_syntax) {}
 
   std::string toString() const override {
-    return (array ? array->toString() : "null") + "@[" +
+    std::string op = use_at_syntax ? "@[" : "[";
+    return (array ? array->toString() : "null") + op +
            (index ? index->toString() : "null") + "]";
   }
 
@@ -1065,6 +1329,60 @@ class UnsafeBlockExpr : public ExprNode {
       result += "; ";
     }
     result += "}";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Struct literal expression: StructName { field1: value1, field2: value2 }
+class StructLiteralExpr : public ExprNode {
+ public:
+  std::string struct_name;
+  std::vector<std::pair<std::string, std::unique_ptr<ExprNode>>> field_values;
+
+  StructLiteralExpr(
+      const LoomSourceLocation& loc, const std::string& name,
+      std::vector<std::pair<std::string, std::unique_ptr<ExprNode>>> values)
+      : ExprNode(loc), struct_name(name), field_values(std::move(values)) {}
+
+  std::string toString() const override {
+    std::string result = struct_name + " {";
+    for (size_t i = 0; i < field_values.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += field_values[i].first + ": ";
+      result +=
+          field_values[i].second ? field_values[i].second->toString() : "null";
+    }
+    result += "}";
+    return result;
+  }
+
+  std::unique_ptr<TypeNode> accept(ASTVisitor& visitor) override {
+    return visitor.visit(*this);
+  }
+};
+
+// Union literal expression: UnionName { field: value }
+class UnionLiteralExpr : public ExprNode {
+ public:
+  std::string union_name;
+  std::string active_field;
+  std::unique_ptr<ExprNode> value;
+
+  UnionLiteralExpr(const LoomSourceLocation& loc, const std::string& name,
+                   const std::string& field, std::unique_ptr<ExprNode> val)
+      : ExprNode(loc),
+        union_name(name),
+        active_field(field),
+        value(std::move(val)) {}
+
+  std::string toString() const override {
+    std::string result = union_name + " { " + active_field + ": ";
+    result += value ? value->toString() : "null";
+    result += " }";
     return result;
   }
 

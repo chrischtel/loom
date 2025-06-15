@@ -138,11 +138,12 @@ bool compileFile(const std::string& filename, const CompilerOptions& options) {
       logMessage(options.verbosity, VerbosityLevel::NORMAL,
                  "Check completed successfully");
       return true;
-    }    // Phase 4: Code Generation
+    }  // Phase 4: Code Generation
     logMessage(options.verbosity, VerbosityLevel::DEBUG,
                "--- Running Code Generator ---");
 
     CodeGen code_generator(options.verbosity);
+    code_generator.setSymbolTable(&sema.getSymbolTable());
     code_generator.generate(ast);
 
     if (options.emit_llvm_ir) {
@@ -433,8 +434,11 @@ int InfoCommand::execute(const CompilerOptions& options) {
     std::cout << "===================" << std::endl;
     std::cout << "Input file: " << options.input_file << std::endl;
     auto file_size = std::filesystem::file_size(options.input_file);
-    std::cout << "File size: " << file_size << " bytes" << std::endl;    // Note: std::format may not be available in all compilers yet
-    (void)std::filesystem::last_write_time(options.input_file); // Suppress unused warning
+    std::cout << "File size: " << file_size << " bytes"
+              << std::endl;  // Note: std::format may not be available in all
+                             // compilers yet
+    (void)std::filesystem::last_write_time(
+        options.input_file);  // Suppress unused warning
     std::cout << "Last modified: [timestamp]" << std::endl;
   }
 

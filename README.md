@@ -1,52 +1,116 @@
-# Loom
-A small experimental programming language I'm building to learn about compiler design and systems programming.
+# Loom Programming Language
 
-## What it does
+**Structured Freedom**: A systems programming language that makes the safe, high-performance path the most ergonomic one, while providing clear escape hatches when you need to talk directly to the metal.
 
-Currently supports basic programs with functions, variables, and simple control flow. Compiles to native executables without external dependencies.
+## What is Loom?
+
+Loom is a modern systems programming language designed around the philosophy of **Structured Freedom**. It combines the performance and control of systems languages like C and Rust with the expressiveness and safety features of higher-level languages.
+
+### Core Paradigm: Structured Freedom
+
+- **Ergonomic Safety**: Safety features feel natural, not restrictive
+- **Pragmatic Performance**: Zero-cost abstractions are the default  
+- **Clarity Over Dogma**: Rules serve the developer, not the other way around
+- **Expressive Tooling**: Designed for an exceptional developer experience
+
+## Key Features
+
+### 🔒 **Memory Safety with Control**
+- Explicit ownership types (`*`, `&`, `[]`) for precise memory management
+- Nullable types (`T?`) with pattern matching for null safety
+- Phantom types for compile-time resource state tracking
+
+### 🚀 **Performance-First Design**
+- Compiles to native executables with no runtime overhead
+- Zero-cost abstractions throughout
+- Direct system call access when needed
+
+### 🧩 **Expressive Type System**  
+- Generics with square bracket syntax: `List[T]`
+- Protocols (interfaces) with powerful constraints
+- Custom operators for domain-specific languages
+- Operator overloading with the `op` keyword
+
+### 🔄 **Modern Concurrency**
+- Grant-based permission system for safe concurrent access
+- Async/await with structured concurrency
+- Context management for implicit parameter passing
+
+### 📦 **Modular Architecture**
+- Unique module syntax: `@module` and `from @module take ...`
+- Fine-grained visibility control
+- Pipeline operators (`|>`) for data transformation
+
+## Quick Example
 
 ```loom
-func fibonacci(n: i32) i32 {
-    if (n <= 1) {
-        return n;
-    }
-    return fibonacci(n - 1) + fibonacci(n - 2);
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+// Custom operators for domain expressiveness  
+operator `<->` (left: Point, right: Point) f64 {
+    let dx = left.x - right.x;
+    let dy = left.y - right.y;
+    return sqrt(dx * dx + dy * dy);
+}
+
+// Generic function with protocol constraints
+func find_closest[T](points: List[T], target: T) T?
+requires T: Comparable {
+    // Implementation with compile-time guarantees
 }
 
 func main() i32 {
-    let result: i32 = fibonacci(10);
-    $$print("Result calculated");
+    let origin = Point(x: 0.0, y: 0.0);
+    let destination = Point(x: 3.0, y: 4.0);
+    
+    // Use custom operator
+    let distance = origin <-> destination;  // 5.0
+    
+    $$print("Distance calculated");
     return 0;
 }
 ```
 
-## Building
+## Building and Usage
 
+### Build from Source
 ```bash
 mkdir build && cd build
 cmake ..
 ninja
-./bin/loom examples/cross_platform_demo.loom
 ```
 
-## Current status
+### Compile Loom Programs
+```bash
+# Compile a program
+./bin/loom build example.loom
 
-Very early development. 
+# Run with debugging info
+./bin/loom build --verbose example.loom
 
-**What's working:**
-- Variable declarations (`let`, `mut`)
-- Function definitions with parameters and return types
-- Basic arithmetic operations (`+`, `-`, `*`, `/`)
-- Comparison operators (`==`, `!=`, `<`, `>`, `<=`, `>=`)
-- Control flow (`if`/`else`, `while` loops)
-- Built-in functions (`$$print`, `$$exit`, `$$syscall`)
-- Cross-platform compilation (Windows, Linux, macOS)
-- Generates standalone executables
+# Check syntax without compiling  
+./bin/loom check example.loom
+```
 
-**What's missing:**
-- No standard library yet
-- Limited error messages  
-- No package system
-- Probably has bugs
+## Development Status
+
+Loom is in active development. The language specification is stable, with core features partially implemented. Std library is not yet available, but basic functionality is provided through the Loom compiler itself.
+
+
+
+## Philosophy in Action
+
+Loom isn't just another systems language. It's built on the belief that developers shouldn't have to choose between safety and performance, or between expressiveness and control. Every design decision serves the goal of making the right thing the easy thing, while keeping escape hatches available when you need them.
+
+Whether you're building operating systems, game engines, embedded software, or high-performance applications, Loom gives you the tools to express your intent clearly and efficiently.
+
+---
+
+**License**: MIT/Apache-2.0 dual-licensed STD-Library and Loom compiler GPL-3.0 licensed. 
+**Status**: Active Development  
+**Contributions**: Welcome!
 
 This is a learning project, so feedback and suggestions are welcome!

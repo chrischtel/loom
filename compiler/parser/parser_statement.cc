@@ -6,13 +6,26 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
     // Skip newlines at the beginning of declarations
     while (match(TokenType::TOKEN_NEWLINE)) {
       // Just consume newlines
-    }
-
-    // If we hit end of file or closing brace after skipping newlines, return
+    }  // If we hit end of file or closing brace after skipping newlines, return
     // null
     if (isAtEnd() || check(TokenType::TOKEN_RIGHT_BRACE)) {
       return nullptr;
+    }  // Parse attributes first (if any)
+    std::vector<std::unique_ptr<AttributeNode>> attributes = parseAttributes();
+
+    // If we have attributes, we must have a declaration that supports them
+    if (!attributes.empty()) {
+      if (match(TokenType::TOKEN_KEYWORD_STRUCT)) {
+        return parseStructDeclarationWithAttributes(std::move(attributes));
+      }
+      if (match(TokenType::TOKEN_KEYWORD_UNION)) {
+        return parseUnionDeclarationWithAttributes(std::move(attributes));
+      }
+      error(peek(),
+            "Attributes can only be applied to struct or union declarations.");
+      return nullptr;
     }
+
     if (match(TokenType::TOKEN_KEYWORD_LET))
       return parseVarDeclaration(VarDeclKind::LET);
     if (match(TokenType::TOKEN_KEYWORD_MUT))
@@ -20,6 +33,8 @@ std::unique_ptr<StmtNode> Parser::parseDeclaration() {
     if (match(TokenType::TOKEN_KEYWORD_DEFINE))
       return parseVarDeclaration(VarDeclKind::DEFINE);
     if (match(TokenType::TOKEN_KEYWORD_FUNC)) return parseFunctionDeclaration();
+    if (match(TokenType::TOKEN_KEYWORD_STRUCT)) return parseStructDeclaration();
+    if (match(TokenType::TOKEN_KEYWORD_UNION)) return parseUnionDeclaration();
     if (match(TokenType::TOKEN_KEYWORD_IF)) return parseIfStatement();
     if (match(TokenType::TOKEN_KEYWORD_WHILE)) return parseWhileStatement();
     if (match(TokenType::TOKEN_KEYWORD_FOR)) return parseForStatement();
@@ -138,7 +153,6 @@ std::unique_ptr<StmtNode> Parser::parseFunctionDeclaration() {
       parameters.push_back(parseParameter());
     } while (match(TokenType::TOKEN_COMMA));
   }
-
   consume(TokenType::TOKEN_RIGHT_PAREN, "Expected ')' after parameters.");
 
   // Return type (optional, default to void)
@@ -260,4 +274,149 @@ std::unique_ptr<StmtNode> Parser::parseForStatement() {
 
   return std::make_unique<ForStmtNode>(for_loc, var_name, std::move(iterable),
                                        std::move(body));
+}
+
+std::unique_ptr<StmtNode> Parser::parseStructDeclaration() {
+  // Legacy method for structs without attributes
+  std::vector<std::unique_ptr<AttributeNode>> empty_attributes;
+  return parseStructDeclarationWithAttributes(std::move(empty_attributes));
+}
+
+std::unique_ptr<StmtNode> Parser::parseStructDeclarationWithAttributes(
+    std::vector<std::unique_ptr<AttributeNode>> attributes) {
+  auto struct_loc = previous().location;  // 'struct' token location
+
+  consume(TokenType::TOKEN_IDENTIFIER, "Expected struct name after 'struct'.");
+  std::string struct_name = previous().value;
+
+  consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after struct name.");
+
+  std::vector<std::unique_ptr<FieldDeclNode>> fields;
+
+  // Parse field declarations
+  while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+    // Skip newlines
+    while (match(TokenType::TOKEN_NEWLINE)) {
+    }
+
+    if (check(TokenType::TOKEN_RIGHT_BRACE)) break;
+
+    // Parse field: name: type,
+    consume(TokenType::TOKEN_IDENTIFIER, "Expected field name.");
+    std::string field_name = previous().value;
+    auto field_loc = previous().location;
+
+    consume(TokenType::TOKEN_COLON, "Expected ':' after field name.");
+
+    std::unique_ptr<TypeNode> field_type = parseType();
+
+    // Optional comma or semicolon
+    if (match(TokenType::TOKEN_COMMA) || match(TokenType::TOKEN_SEMICOLON)) {
+      // Consumed optional separator
+    }
+
+    fields.push_back(std::make_unique<FieldDeclNode>(field_loc, field_name,
+                                                     std::move(field_type)));
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after struct fields.");
+
+  return std::make_unique<StructDeclNode>(
+      struct_loc, struct_name, std::move(fields), std::move(attributes));
+}
+
+std::unique_ptr<StmtNode> Parser::parseUnionDeclaration() {
+  // Legacy method for unions without attributes
+  std::vector<std::unique_ptr<AttributeNode>> empty_attributes;
+  return parseUnionDeclarationWithAttributes(std::move(empty_attributes));
+}
+
+std::unique_ptr<StmtNode> Parser::parseUnionDeclarationWithAttributes(
+    std::vector<std::unique_ptr<AttributeNode>> attributes) {
+  auto union_loc = previous().location;  // 'union' token location
+
+  consume(TokenType::TOKEN_IDENTIFIER, "Expected union name after 'union'.");
+  std::string union_name = previous().value;
+
+  consume(TokenType::TOKEN_LEFT_BRACE, "Expected '{' after union name.");
+
+  std::vector<std::unique_ptr<FieldDeclNode>> fields;
+
+  // Parse field declarations
+  while (!check(TokenType::TOKEN_RIGHT_BRACE) && !isAtEnd()) {
+    // Skip newlines
+    while (match(TokenType::TOKEN_NEWLINE)) {
+    }
+
+    if (check(TokenType::TOKEN_RIGHT_BRACE)) break;
+
+    // Parse field: name: type,
+    consume(TokenType::TOKEN_IDENTIFIER, "Expected field name.");
+    std::string field_name = previous().value;
+    auto field_loc = previous().location;
+
+    consume(TokenType::TOKEN_COLON, "Expected ':' after field name.");
+
+    std::unique_ptr<TypeNode> field_type = parseType();
+
+    // Optional comma or semicolon
+    if (match(TokenType::TOKEN_COMMA) || match(TokenType::TOKEN_SEMICOLON)) {
+      // Consumed optional separator
+    }
+
+    fields.push_back(std::make_unique<FieldDeclNode>(field_loc, field_name,
+                                                     std::move(field_type)));
+  }
+
+  consume(TokenType::TOKEN_RIGHT_BRACE, "Expected '}' after union fields.");
+
+  return std::make_unique<UnionDeclNode>(
+      union_loc, union_name, std::move(fields), std::move(attributes));
+}
+
+std::unique_ptr<AttributeNode> Parser::parseAttribute() {
+  // Expect @ symbol
+  auto attr_loc = peek().location;
+  consume(TokenType::TOKEN_AT, "Expected '@' at start of attribute.");
+
+  // Accept either identifier or packed keyword as attribute name
+  if (match(TokenType::TOKEN_IDENTIFIER) ||
+      match(TokenType::TOKEN_KEYWORD_PACKED)) {
+    std::string attr_name = previous().value;
+
+    std::vector<std::string> parameters;
+
+    // Check for optional parameters: @attr(param1, param2)
+    if (match(TokenType::TOKEN_LEFT_PAREN)) {
+      if (!check(TokenType::TOKEN_RIGHT_PAREN)) {
+        do {
+          if (match(TokenType::TOKEN_IDENTIFIER) ||
+              match(TokenType::TOKEN_STRING) ||
+              match(TokenType::TOKEN_NUMBER_INT)) {
+            parameters.push_back(previous().value);
+          } else {
+            error(peek(), "Expected parameter value in attribute.");
+          }
+        } while (match(TokenType::TOKEN_COMMA));
+      }
+      consume(TokenType::TOKEN_RIGHT_PAREN,
+              "Expected ')' after attribute parameters.");
+    }
+
+    return std::make_unique<AttributeNode>(attr_loc, attr_name,
+                                           std::move(parameters));
+  } else {
+    error(peek(), "Expected attribute name after '@'.");
+    return nullptr;
+  }
+}
+
+std::vector<std::unique_ptr<AttributeNode>> Parser::parseAttributes() {
+  std::vector<std::unique_ptr<AttributeNode>> attributes;
+
+  while (check(TokenType::TOKEN_AT)) {
+    attributes.push_back(parseAttribute());
+  }
+
+  return attributes;
 }

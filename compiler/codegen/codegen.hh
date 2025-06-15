@@ -7,8 +7,8 @@
 #include <vector>  // Hinzufügen
 
 // LLVM-Header
-#include "../syscalls/syscall_framework.hh"
 #include "../cli/cli.hh"  // For VerbosityLevel
+#include "../syscalls/syscall_framework.hh"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -23,6 +23,7 @@
 #include "llvm/TargetParser/Triple.h"
 
 // Platform detection and syscall support
+#include "../sema/symbol_table.hh"
 enum class TargetPlatform { Windows, Linux, MacOS, Unknown };
 
 // Forward-Deklarationen
@@ -47,9 +48,12 @@ class IntegerLiteralTypeNode;
 class FloatLiteralTypeNode;
 class BinaryExpr;
 class Identifier;
+class UnaryExpr;
+class CastExpr;
 // Memory model forward declarations
 class ReferenceExpr;
 class DereferenceExpr;
+class MemberAccessExpr;
 class ArrayLiteralExpr;
 class IndexExpr;
 class RangeExpr;
@@ -59,10 +63,18 @@ class NullableTypeNode;
 class SliceTypeNode;
 class NullTypeNode;
 
+// Struct-related forward declarations
+class StructDeclNode;
+class FieldDeclNode;
+class StructTypeNode;
+class StructLiteralExpr;
+
 class CodeGen {
  public:
   CodeGen();
   explicit CodeGen(loom::VerbosityLevel verbosity);
+
+  void setSymbolTable(const SymbolTable* symbols);
 
   // NEU: Akzeptiert einen Vektor von Statements
   void generate(const std::vector<std::unique_ptr<StmtNode>>& ast);
@@ -80,15 +92,17 @@ class CodeGen {
   bool initializeLLVMTargets();
   // Public access to LLVM module for external compilation
   std::unique_ptr<llvm::Module> module;
+
  private:
   std::unique_ptr<llvm::LLVMContext> context;
   std::unique_ptr<llvm::IRBuilder<>> builder;
   std::unique_ptr<loom::SyscallFramework> syscallFramework;
   std::map<std::string, llvm::Value*> named_values;
   std::map<std::string, llvm::Type*>
-      variable_types;                // Track types for opaque pointers
-  llvm::Function* current_function;  // For return statement handling
-  loom::VerbosityLevel verbosity_level;    // Control logging output
+      variable_types;                    // Track types for opaque pointers
+  llvm::Function* current_function;      // For return statement handling
+  loom::VerbosityLevel verbosity_level;  // Control logging output
+  const SymbolTable* symbol_table;       // Access to struct definitions
   // Dispatch-Methoden (unverändert)
   llvm::Value* codegen(ASTNode& node);
   llvm::Value* codegen(NumberLiteral& node);
@@ -105,9 +119,19 @@ class CodeGen {
   llvm::Value* codegen(FunctionDeclNode& node);
   llvm::Value* codegen(ReturnStmtNode& node);
   llvm::Value* codegen(BinaryExpr& node);
-  llvm::Value* codegen(Identifier& node);  // Memory model code generation
+  llvm::Value* codegen(UnaryExpr& node);
+  llvm::Value* codegen(CastExpr& node);
+  llvm::Value* codegen(Identifier& node);
+  // Struct-related code generation
+  llvm::Value* codegen(StructDeclNode& node);
+  llvm::Value* codegen(StructLiteralExpr& node);
+  // Union-related code generation
+  llvm::Value* codegen(UnionDeclNode& node);
+  llvm::Value* codegen(UnionLiteralExpr& node);
+  // Memory model code generation
   llvm::Value* codegen(ReferenceExpr& node);
   llvm::Value* codegen(DereferenceExpr& node);
+  llvm::Value* codegen(MemberAccessExpr& node);
   llvm::Value* codegen(ArrayLiteralExpr& node);
   llvm::Value* codegen(IndexExpr& node);
   llvm::Value* codegen(RangeExpr& node);
@@ -126,7 +150,11 @@ class CodeGen {
                                     std::vector<llvm::Value*>& args);
   llvm::Value* generateWindowsSyscall(const std::string& name,
                                       std::vector<llvm::Value*>& args);
-
   // Logging helper
-  void logMessage(loom::VerbosityLevel required, const std::string& message) const;
+  void logMessage(loom::VerbosityLevel required,
+                  const std::string& message) const;
+
+  // Helper method to get field index from struct info
+  int getFieldIndex(const std::string& struct_name,
+                    const std::string& field_name) const;
 };

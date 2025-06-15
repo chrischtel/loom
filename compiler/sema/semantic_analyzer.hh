@@ -10,11 +10,13 @@ class SemanticAnalyzer : public ASTVisitor {
   bool had_error = false;
   void error(const LoomSourceLocation& loc, const std::string& message);
   std::unique_ptr<TypeNode> cloneType(TypeNode* type);
+  bool isValidCast(TypeNode* from_type, TypeNode* to_type);
 
  public:
   SemanticAnalyzer();
   void analyze(const std::vector<std::unique_ptr<StmtNode>>& ast);
   bool hasError() const { return had_error; }
+  const SymbolTable& getSymbolTable() const { return symbols; }
 
   std::unique_ptr<TypeNode> visit(NumberLiteral& node) override;
   std::unique_ptr<TypeNode> visit(StringLiteral& node) override;
@@ -22,6 +24,7 @@ class SemanticAnalyzer : public ASTVisitor {
   std::unique_ptr<TypeNode> visit(Identifier& node) override;
   std::unique_ptr<TypeNode> visit(BinaryExpr& node) override;
   std::unique_ptr<TypeNode> visit(UnaryExpr& node) override;
+  std::unique_ptr<TypeNode> visit(CastExpr& node) override;
   std::unique_ptr<TypeNode> visit(AssignmentExpr& node) override;
   std::unique_ptr<TypeNode> visit(VarDeclNode& node) override;
   std::unique_ptr<TypeNode> visit(ExprStmtNode& node) override;
@@ -42,10 +45,23 @@ class SemanticAnalyzer : public ASTVisitor {
   std::unique_ptr<TypeNode> visit(ParameterNode& node) override;
   std::unique_ptr<TypeNode> visit(ReturnStmtNode& node) override;
   std::unique_ptr<TypeNode> visit(BuiltinCallExpr& node) override;
+  // Struct-related visitors
+  std::unique_ptr<TypeNode> visit(StructDeclNode& node) override;
+  std::unique_ptr<TypeNode> visit(FieldDeclNode& node) override;
+  std::unique_ptr<TypeNode> visit(StructTypeNode& node) override;
+  std::unique_ptr<TypeNode> visit(StructLiteralExpr& node) override;
 
+  // Union visitors
+  std::unique_ptr<TypeNode> visit(UnionDeclNode& node) override;
+  std::unique_ptr<TypeNode> visit(UnionTypeNode& node) override;
+  std::unique_ptr<TypeNode> visit(UnionLiteralExpr& node) override;
+
+  // Attribute visitors
+  std::unique_ptr<TypeNode> visit(AttributeNode& node) override;
   // Memory model visitors
   std::unique_ptr<TypeNode> visit(ReferenceTypeNode& node) override;
   std::unique_ptr<TypeNode> visit(OwnedPointerTypeNode& node) override;
+  std::unique_ptr<TypeNode> visit(RawPointerTypeNode& node) override;
   std::unique_ptr<TypeNode> visit(NullableTypeNode& node) override;
   std::unique_ptr<TypeNode> visit(SliceTypeNode& node) override;
   std::unique_ptr<TypeNode> visit(ReferenceExpr& node) override;

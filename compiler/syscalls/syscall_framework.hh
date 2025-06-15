@@ -23,6 +23,7 @@ enum class SyscallType {
   OPEN,
   CLOSE,
   SOCKET,
+  HTONS,
   BIND,
   LISTEN,
   ACCEPT,
@@ -53,25 +54,43 @@ enum class DataType {
   BOOLEAN
 };
 
+// Configuration for syscall framework
+struct SyscallConfig {
+  bool use_libc = true;  // Whether to use libc functions (sprintf, etc.)
+  bool auto_newline =
+      true;                 // Whether $$print should add newlines automatically
+  int float_precision = 6;  // Default precision for float printing
+  int integer_base = 10;    // Default base for integer printing
+};
+
 class SyscallFramework {
  public:
   SyscallFramework(llvm::LLVMContext* context, llvm::IRBuilder<>* builder,
-                   llvm::Module* module);
+                   llvm::Module* module, const SyscallConfig& config = {});
+
+  // Configuration management
+  void setConfig(const SyscallConfig& config) { this->config = config; }
+  const SyscallConfig& getConfig() const { return config; }
 
   // Main syscall generation interface
   llvm::Value* generateSyscall(SyscallType type,
                                std::vector<llvm::Value*>& args,
                                DataType dataType = DataType::INT32);
-
-  // Type-specific print functions (no hardcoded lengths)
+  // Type-specific print functions (improved)
   llvm::Value* printString(llvm::Value* stringPtr,
                            llvm::Value* length = nullptr);
   llvm::Value* printInteger(llvm::Value* intValue, DataType type,
-                            int base = 10);
+                            int base = -1);  // -1 means use config default
   llvm::Value* printFloat(llvm::Value* floatValue, DataType type,
-                          int precision = 6);
+                          int precision = -1);  // -1 means use config default
   llvm::Value* printBoolean(llvm::Value* boolValue);
   llvm::Value* printPointer(llvm::Value* ptrValue);
+  // High-level print function (like $$print)
+  llvm::Value* print(llvm::Value* value, DataType type = DataType::INT32);
+
+  // Network syscall interface
+  llvm::Value* generateNetworkSyscall(const std::string& syscallName,
+                                      std::vector<llvm::Value*>& args);
 
   // Platform-specific implementations
   llvm::Value* generateWindowsSyscall(SyscallType type,
@@ -83,7 +102,6 @@ class SyscallFramework {
   llvm::Value* generateMacOSSyscall(SyscallType type,
                                     std::vector<llvm::Value*>& args,
                                     DataType dataType);
-
   // Utility functions
   llvm::Value* calculateStringLength(llvm::Value* stringPtr);
   llvm::Value* integerToString(llvm::Value* intValue, DataType type,
@@ -91,6 +109,34 @@ class SyscallFramework {
   llvm::Value* floatToString(llvm::Value* floatValue, DataType type,
                              int precision = 6);
   llvm::Value* reverseString(llvm::Value* stringPtr, llvm::Value* length);
+
+  // Complex mathematical operations for precise conversion
+  llvm::Value* calculateLog10(llvm::Value* value);
+  llvm::Value* calculateMantissa(llvm::Value* value, llvm::Value* exponent);
+  llvm::Value* convertMantissaToString(llvm::Value* buffer,
+                                       llvm::Value* startPos,
+                                       llvm::Value* mantissa, int precision);
+  llvm::Value* convertRegularFloatToString(llvm::Value* buffer,
+                                           llvm::Value* startPos,
+                                           llvm::Value* value, int precision);
+  llvm::Value* convertLargeIntegerToString(llvm::Value* buffer,
+                                           llvm::Value* startPos,
+                                           llvm::Value* intValue);
+  llvm::Value* convertIntegerToString(llvm::Value* buffer,
+                                      llvm::Value* startPos,
+                                      llvm::Value* intValue, int base);
+
+  // Libc-based implementations (when config.use_libc = true)
+  llvm::Value* floatToStringLibc(llvm::Value* floatValue, DataType type,
+                                 int precision);
+  llvm::Value* integerToStringLibc(llvm::Value* intValue, DataType type,
+                                   int base);
+
+  // No-libc implementations (when config.use_libc = false)
+  llvm::Value* floatToStringNoLibc(llvm::Value* floatValue, DataType type,
+                                   int precision);
+  llvm::Value* integerToStringNoLibc(llvm::Value* intValue, DataType type,
+                                     int base);
 
   // Memory management (libc-free)
   llvm::Value* allocateBuffer(llvm::Value* size);
@@ -100,6 +146,7 @@ class SyscallFramework {
   llvm::LLVMContext* context;
   llvm::IRBuilder<>* builder;
   llvm::Module* module;
+  SyscallConfig config;  // Configuration for syscall behavior
 
   // Platform detection
   enum class Platform { WINDOWS, LINUX, MACOS, UNKNOWN };

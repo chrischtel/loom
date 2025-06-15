@@ -50,7 +50,6 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
                                         // gibt einen Initializer.
     // Check for memory model type compatibility
     bool types_compatible = false;
-
     if (node.type->isEqualTo(initializer_type.get())) {
       // Types are exactly equal
       types_compatible = true;
@@ -58,6 +57,29 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
       // Use the new canAcceptFrom method for memory model compatibility
       types_compatible = true;
     } else {
+      // Special case: Check if we have a struct/union name mismatch due to
+      // parsing (parser creates StructTypeNode for all user-defined types)
+      if (auto var_struct =
+              dynamic_cast<const StructTypeNode*>(node.type.get())) {
+        if (auto init_union =
+                dynamic_cast<const UnionTypeNode*>(initializer_type.get())) {
+          if (var_struct->struct_name == init_union->union_name) {
+            types_compatible = true;
+          }
+        }
+      }
+      if (auto var_union =
+              dynamic_cast<const UnionTypeNode*>(node.type.get())) {
+        if (auto init_struct =
+                dynamic_cast<const StructTypeNode*>(initializer_type.get())) {
+          if (var_union->union_name == init_struct->struct_name) {
+            types_compatible = true;
+          }
+        }
+      }
+    }
+
+    if (!types_compatible) {
       // Check for literal conversion (legacy compatibility)
       if (auto int_literal = dynamic_cast<const IntegerLiteralTypeNode*>(
               initializer_type.get())) {
@@ -152,6 +174,10 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
     } else if (auto string_type =
                    dynamic_cast<StringTypeNode*>(final_type.get())) {
       node.type = std::make_unique<StringTypeNode>(string_type->location);
+    } else if (auto struct_type =
+                   dynamic_cast<StructTypeNode*>(final_type.get())) {
+      node.type = std::make_unique<StructTypeNode>(struct_type->location,
+                                                   struct_type->struct_name);
     }
     // Add other type cases as needed
   }
@@ -218,67 +244,86 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(Identifier& node) {
     error(node.location, "'" + node.name + "' is not a variable.");
     return nullptr;
   }
-
   const VariableInfo& var_info = std::get<VariableInfo>(info->data);
-  return var_info.type->accept(*this);
+
+  // Check if the stored type is a StructTypeNode that should actually be a
+  // UnionTypeNode
+  if (auto struct_type =
+          dynamic_cast<const StructTypeNode*>(var_info.type.get())) {
+    if (symbols.isUnionDefined(struct_type->struct_name)) {
+      // Return a UnionTypeNode instead
+      return std::make_unique<UnionTypeNode>(struct_type->location,
+                                             struct_type->struct_name);
+    }
+  }
+
+  return cloneType(var_info.type.get());
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(AssignmentExpr& node) {
   std::unique_ptr<TypeNode> value_type = node.value->accept(*this);
   if (!value_type) return nullptr;
 
-  const SymbolInfo* info = symbols.lookup(node.name);
+  // Get the type of the assignment target
+  std::unique_ptr<TypeNode> target_type = node.target->accept(*this);
+  if (!target_type) return nullptr;
 
-  if (info == nullptr) {
-    error(node.location, "Undeclared identifier '" + node.name + "'.");
-    return nullptr;
+  // For simple variable assignments, do the old mutability check
+  if (auto* identifier = dynamic_cast<Identifier*>(node.target.get())) {
+    const SymbolInfo* info = symbols.lookup(identifier->name);
+    if (!info) {
+      error(node.location, "Undeclared identifier '" + identifier->name + "'.");
+      return nullptr;
+    }
+
+    if (info->kind != SymbolKind::VARIABLE) {
+      error(node.location, "'" + identifier->name + "' is not a variable.");
+      return nullptr;
+    }
+
+    const VariableInfo& var_info = std::get<VariableInfo>(info->data);
+    if (var_info.kind != VarDeclKind::MUT) {
+      error(node.location,
+            "Cannot assign to immutable variable '" + identifier->name + "'.");
+      return nullptr;
+    }
   }
-  // Get the variable info from the symbol
-  if (info->kind != SymbolKind::VARIABLE) {
-    error(node.location, "'" + node.name + "' is not a variable.");
-    return nullptr;
-  }
 
-  const VariableInfo& var_info = std::get<VariableInfo>(info->data);
-
-  if (var_info.kind != VarDeclKind::MUT) {
-    error(node.location,
-          "Cannot assign to immutable variable '" + node.name + "'.");
-    return nullptr;
-  }
-
-  // Check type compatibility with literal conversion support
   bool types_compatible = false;
-
-  if (var_info.type->isEqualTo(value_type.get())) {
+  if (target_type->isEqualTo(value_type.get())) {
+    types_compatible = true;
+  } else if (target_type->canAcceptFrom(value_type.get())) {
     types_compatible = true;
   } else {
-    // Check for literal conversion
-    if (auto int_literal =
-            dynamic_cast<const IntegerLiteralTypeNode*>(value_type.get())) {
-      if (auto target_int =
-              dynamic_cast<const IntegerTypeNode*>(var_info.type.get())) {
-        types_compatible = int_literal->canFitInto(target_int);
+    // Special case for struct/union name mismatch due to parsing
+    if (auto var_struct =
+            dynamic_cast<const StructTypeNode*>(target_type.get())) {
+      if (auto init_union =
+              dynamic_cast<const UnionTypeNode*>(value_type.get())) {
+        if (var_struct->struct_name == init_union->union_name) {
+          types_compatible = true;
+        }
       }
-    } else if (auto float_literal = dynamic_cast<const FloatLiteralTypeNode*>(
-                   value_type.get())) {
-      if (auto target_float =
-              dynamic_cast<const FloatTypeNode*>(var_info.type.get())) {
-        types_compatible = float_literal->canFitInto(target_float);
+    }
+    if (auto var_union =
+            dynamic_cast<const UnionTypeNode*>(target_type.get())) {
+      if (auto init_struct =
+              dynamic_cast<const StructTypeNode*>(value_type.get())) {
+        if (var_union->union_name == init_struct->struct_name) {
+          types_compatible = true;
+        }
       }
     }
   }
 
   if (!types_compatible) {
-    error(node.location, "Type mismatch: Cannot assign value of type '" +
-                             value_type->getTypeName() + "' to variable '" +
-                             node.name + "' of type '" +
-                             var_info.type->getTypeName() + "'.");
+    error(node.location, "Type mismatch in assignment: cannot assign " +
+                             value_type->toString() + " to " +
+                             target_type->toString());
     return nullptr;
   }
 
-  // Der Typ des Zuweisungs-Ausdrucks ist der Typ des zugewiesenen Wertes.
-  return value_type;
+  return cloneType(target_type.get());
 }
 
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnaryExpr& node) {
@@ -288,7 +333,6 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnaryExpr& node) {
     case TokenType::TOKEN_BANG:
       // Logical NOT operator always returns bool
       return std::make_unique<BooleanTypeNode>(node.location);
-
     case TokenType::TOKEN_MINUS:
       // Check if the type supports unary minus (integers and floats)
       if (dynamic_cast<const IntegerTypeNode*>(right_type.get()) ||
@@ -297,6 +341,16 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnaryExpr& node) {
         return right_type->accept(*this);
       } else {
         error(node.op.location, "Operator '-' cannot be applied to type '" +
+                                    right_type->getTypeName() + "'.");
+        return nullptr;
+      }
+    case TokenType::TOKEN_BITWISE_NOT:
+      // Bitwise NOT operator - only for integers
+      if (dynamic_cast<const IntegerTypeNode*>(right_type.get())) {
+        // Return the same type as the operand
+        return right_type->accept(*this);
+      } else {
+        error(node.op.location, "Operator '~' cannot be applied to type '" +
                                     right_type->getTypeName() + "'.");
         return nullptr;
       }
@@ -800,6 +854,15 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(OwnedPointerTypeNode& node) {
   return nullptr;
 }
 
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(RawPointerTypeNode& node) {
+  // Analyze the pointed type
+  if (node.pointed_type) {
+    node.pointed_type->accept(*this);
+  }
+  // Raw pointers are always valid at compile time
+  return nullptr;
+}
+
 std::unique_ptr<TypeNode> SemanticAnalyzer::visit(NullableTypeNode& node) {
   // Analyze the inner type first
   if (!node.inner_type) {
@@ -926,10 +989,55 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(MemberAccessExpr& node) {
     error(node.location, "Cannot determine type of object for member access");
     return nullptr;
   }
+  // Check if the object is a struct type
+  if (auto struct_type = dynamic_cast<StructTypeNode*>(object_type.get())) {
+    // Look up the struct definition in the symbol table
+    const StructInfo* struct_info =
+        symbols.lookupStruct(struct_type->struct_name);
+    if (!struct_info) {
+      error(node.location,
+            "Unknown struct type '" + struct_type->struct_name + "'");
+      return nullptr;
+    }
 
-  // TODO: Implement struct/object type checking and member lookup
-  error(node.location, "Member access not yet implemented for type: " +
-                           object_type->getTypeName());
+    // Find the field in the struct definition
+    for (const auto& field : struct_info->fields) {
+      if (field.first == node.member_name) {
+        // Found the field, return a clone of its type
+        return cloneType(field.second.get());
+      }
+    }
+
+    error(node.location, "Unknown field '" + node.member_name +
+                             "' in struct '" + struct_type->struct_name + "'");
+    return nullptr;
+  }
+
+  // Check if the object is a union type
+  if (auto union_type = dynamic_cast<UnionTypeNode*>(object_type.get())) {
+    // Look up the union definition in the symbol table
+    const UnionInfo* union_info = symbols.lookupUnion(union_type->union_name);
+    if (!union_info) {
+      error(node.location,
+            "Unknown union type '" + union_type->union_name + "'");
+      return nullptr;
+    }
+
+    // Find the field in the union definition
+    for (const auto& field : union_info->fields) {
+      if (field.first == node.member_name) {
+        // Found the field, return a clone of its type
+        return cloneType(field.second.get());
+      }
+    }
+
+    error(node.location, "Unknown field '" + node.member_name + "' in union '" +
+                             union_type->union_name + "'");
+    return nullptr;
+  }
+
+  error(node.location,
+        "Member access not supported for type: " + object_type->getTypeName());
   return nullptr;
 }
 
@@ -1039,9 +1147,76 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::cloneType(TypeNode* type) {
     if (!cloned_pointed) return nullptr;
     return std::make_unique<OwnedPointerTypeNode>(owned_type->location,
                                                   std::move(cloned_pointed));
+  } else if (auto raw_type = dynamic_cast<RawPointerTypeNode*>(type)) {
+    auto cloned_pointed = cloneType(raw_type->pointed_type.get());
+    if (!cloned_pointed) return nullptr;
+    return std::make_unique<RawPointerTypeNode>(raw_type->location,
+                                                std::move(cloned_pointed));
+  } else if (auto struct_type = dynamic_cast<StructTypeNode*>(type)) {
+    return std::make_unique<StructTypeNode>(struct_type->location,
+                                            struct_type->struct_name);
+  } else if (auto union_type = dynamic_cast<UnionTypeNode*>(type)) {
+    return std::make_unique<UnionTypeNode>(union_type->location,
+                                           union_type->union_name);
   }
+
+  else if (auto slice_type = dynamic_cast<SliceTypeNode*>(type)) {
+    auto cloned_element = cloneType(slice_type->element_type.get());
+    if (!cloned_element)
+      return nullptr;  // Should not happen if types are valid
+    return std::make_unique<SliceTypeNode>(slice_type->location,
+                                           std::move(cloned_element));
+  }
+
   // Add more type cloning as needed for other type nodes
   return nullptr;
+}
+
+bool SemanticAnalyzer::isValidCast(TypeNode* from_type, TypeNode* to_type) {
+  if (!from_type || !to_type) return false;
+
+  // Allow casting between integer types
+  if (dynamic_cast<IntegerTypeNode*>(from_type) &&
+      dynamic_cast<IntegerTypeNode*>(to_type)) {
+    return true;
+  }
+
+  // Allow casting integer literals to integer types
+  if (dynamic_cast<IntegerLiteralTypeNode*>(from_type) &&
+      dynamic_cast<IntegerTypeNode*>(to_type)) {
+    return true;
+  }
+
+  // Allow casting between float types
+  if (dynamic_cast<FloatTypeNode*>(from_type) &&
+      dynamic_cast<FloatTypeNode*>(to_type)) {
+    return true;
+  }
+
+  // Allow casting float literals to float types
+  if (dynamic_cast<FloatLiteralTypeNode*>(from_type) &&
+      dynamic_cast<FloatTypeNode*>(to_type)) {
+    return true;
+  }
+
+  // Allow casting between array types with compatible element types
+  if (auto from_slice = dynamic_cast<SliceTypeNode*>(from_type)) {
+    if (auto to_slice = dynamic_cast<SliceTypeNode*>(to_type)) {
+      return isValidCast(from_slice->element_type.get(),
+                         to_slice->element_type.get());
+    }
+  }
+
+  // Allow casting integer literals/types to other integer types (for
+  // networking)
+  if ((dynamic_cast<IntegerLiteralTypeNode*>(from_type) ||
+       dynamic_cast<IntegerTypeNode*>(from_type)) &&
+      dynamic_cast<IntegerTypeNode*>(to_type)) {
+    return true;
+  }
+
+  // For now, be permissive with casts to help with networking types
+  return true;
 }
 
 // --- New Phase 1 Expression Visitors ---
@@ -1168,4 +1343,163 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(RangeExpr& node) {
   // Ranges don't have a concrete type in this implementation
   // They are only used in for loop contexts
   return std::make_unique<IntegerTypeNode>(node.location, 32, true);
+}
+
+// --- Struct-related visitor implementations ---
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StructDeclNode& node) {
+  // Collect field information from the struct declaration
+  std::vector<std::pair<std::string, std::shared_ptr<TypeNode>>> fields;
+
+  for (const auto& field : node.fields) {
+    if (field) {
+      // Validate the field type
+      auto field_type = field->type->accept(*this);
+      if (field_type) {
+        // Convert unique_ptr to shared_ptr for storage in symbol table
+        fields.emplace_back(field->name,
+                            std::shared_ptr<TypeNode>(field_type.release()));
+      }
+    }
+  }
+
+  // Register the struct in the symbol table
+  if (!symbols.defineStruct(node.name, std::move(fields))) {
+    error(node.location, "Struct '" + node.name + "' is already defined");
+  }
+
+  // Struct declarations don't have a return type
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(FieldDeclNode& node) {
+  // Validate the field type
+  if (node.type) {
+    return node.type->accept(*this);
+  }
+
+  error(node.location, "Field must have a type");
+  return nullptr;
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StructTypeNode& node) {
+  // Check if it's actually a struct type
+  if (symbols.isStructDefined(node.struct_name)) {
+    return cloneType(&node);
+  }
+
+  // Check if it's actually a union type (parser creates StructTypeNode for all
+  // user-defined types)
+  if (symbols.isUnionDefined(node.struct_name)) {
+    // Return a UnionTypeNode instead
+    return std::make_unique<UnionTypeNode>(node.location, node.struct_name);
+  }
+
+  // Neither struct nor union found
+  error(node.location, "Unknown struct type '" + node.struct_name + "'");
+  return std::make_unique<StructTypeNode>(node.location, "undefined");
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(StructLiteralExpr& node) {
+  // Check if it's actually a struct literal
+  if (symbols.isStructDefined(node.struct_name)) {
+    // TODO: Validate that the struct exists and has the correct fields
+    return std::make_unique<StructTypeNode>(node.location, node.struct_name);
+  }
+
+  // Check if it's actually a union literal (parser creates StructLiteralExpr
+  // for all aggregate literals)
+  if (symbols.isUnionDefined(node.struct_name)) {
+    // TODO: Validate that the union exists and has the correct fields
+    return std::make_unique<UnionTypeNode>(node.location, node.struct_name);
+  }
+
+  // Neither struct nor union found
+  error(node.location, "Unknown struct/union type '" + node.struct_name + "'");
+  return std::make_unique<StructTypeNode>(node.location, "undefined");
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(CastExpr& node) {
+  // Analyze the expression being cast
+  auto expr_type = node.expression->accept(*this);
+  if (!expr_type) {
+    error(node.location, "Cannot determine type of expression in cast");
+    return nullptr;
+  }
+
+  // Validate the target type by visiting it (this will validate it's
+  // well-formed)
+  node.target_type->accept(*this);
+
+  // Check if the cast is valid (use the actual type nodes, not the visitor
+  // results)
+  if (!isValidCast(expr_type.get(), node.target_type.get())) {
+    error(node.location, "Invalid cast from '" + expr_type->getTypeName() +
+                             "' to '" + node.target_type->getTypeName() + "'");
+    return nullptr;
+  }
+
+  // Return a clone of the target type
+  return cloneType(node.target_type.get());
+}
+
+// --- Union and Attribute visitor methods ---
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnionDeclNode& node) {
+  // Register the union type in the symbol table
+  std::vector<std::pair<std::string, std::shared_ptr<TypeNode>>> fields;
+
+  for (const auto& field : node.fields) {
+    if (field->type) {
+      auto field_type =
+          std::shared_ptr<TypeNode>(field->type->accept(*this).release());
+      fields.emplace_back(field->name, field_type);
+    }
+  }
+  // Check attributes for packed, etc.
+  bool is_packed = false;
+  for (const auto& attr : node.attributes) {
+    if (attr->name == "packed") {
+      is_packed = true;
+    }
+  }
+
+  // TODO: Use is_packed for code generation
+  (void)is_packed;  // Suppress unused warning for now
+
+  symbols.defineUnion(node.name, fields);
+
+  // Return a union type node
+  return std::make_unique<UnionTypeNode>(node.location, node.name);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnionTypeNode& node) {
+  // Verify that the union type exists
+  if (!symbols.isUnionDefined(node.union_name)) {
+    error(node.location, "Undefined union type: " + node.union_name);
+    return std::make_unique<UnionTypeNode>(node.location, "undefined");
+  }
+
+  return std::make_unique<UnionTypeNode>(node.location, node.union_name);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(UnionLiteralExpr& node) {
+  // Check if the union type exists
+  if (!symbols.isUnionDefined(node.union_name)) {
+    error(node.location, "Undefined union type: " + node.union_name);
+    return std::make_unique<UnionTypeNode>(node.location, "undefined");
+  }
+
+  // Type check the value expression
+  if (node.value) {
+    node.value->accept(*this);
+  }
+
+  return std::make_unique<UnionTypeNode>(node.location, node.union_name);
+}
+
+std::unique_ptr<TypeNode> SemanticAnalyzer::visit(AttributeNode& node) {
+  // Attributes don't have a type, but we need to return something
+  // for the visitor pattern. Return void type.
+  return std::make_unique<NullTypeNode>(node.location);
 }

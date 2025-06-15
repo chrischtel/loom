@@ -19,6 +19,10 @@ static const std::unordered_map<std::string_view, TokenType> keywords = {
     {"unsafe", TokenType::TOKEN_KEYWORD_UNSAFE},
     {"static", TokenType::TOKEN_KEYWORD_STATIC},
     {"null", TokenType::TOKEN_KEYWORD_NULL},
+    {"struct", TokenType::TOKEN_KEYWORD_STRUCT},
+    {"cast", TokenType::TOKEN_KEYWORD_CAST},
+    {"union", TokenType::TOKEN_KEYWORD_UNION},
+    {"packed", TokenType::TOKEN_KEYWORD_PACKED},
 };
 
 bool Scanner::isAtEnd() { return current_offset >= source_buffer.length(); }
@@ -247,9 +251,17 @@ LoomToken Scanner::scanNextToken() {
       return (makeToken(match('=') ? TokenType::TOKEN_EQUAL_EQUAL
                                    : TokenType::TOKEN_EQUAL));
     case '<':
+      if (peek() == '<') {
+        advance();  // consume second <
+        return makeToken(TokenType::TOKEN_LEFT_SHIFT);
+      }
       return makeToken(match('=') ? TokenType::TOKEN_LESS_EQUAL
                                   : TokenType::TOKEN_LESS);
     case '>':
+      if (peek() == '>') {
+        advance();  // consume second >
+        return makeToken(TokenType::TOKEN_RIGHT_SHIFT);
+      }
       return makeToken(match('=') ? TokenType::TOKEN_GREATER_EQUAL
                                   : TokenType::TOKEN_GREATER);
     case ';':
@@ -266,9 +278,17 @@ LoomToken Scanner::scanNextToken() {
     case '*':
       return makeToken(TokenType::TOKEN_STAR);
     case '&':
-      return makeToken(TokenType::TOKEN_AMPERSAND);
+      // Context-sensitive: & for reference, && for logical and (future),
+      // bitwise and in expressions
+      return makeToken(
+          TokenType::TOKEN_AMPERSAND);  // Parser will determine context
     case '^':
-      return makeToken(TokenType::TOKEN_HAT);
+      // Context-sensitive: ^ for owned pointer, bitwise xor in expressions
+      return makeToken(TokenType::TOKEN_HAT);  // Parser will determine context
+    case '|':
+      return makeToken(TokenType::TOKEN_BITWISE_OR);
+    case '~':
+      return makeToken(TokenType::TOKEN_BITWISE_NOT);
     case '?':
       return makeToken(TokenType::TOKEN_QUESTION);
     case '.':
@@ -371,6 +391,20 @@ std::string Scanner::loom_toke_type_to_string(TokenType type) {
       return "TOKEN_KEYWORD_STATIC";
     case TokenType::TOKEN_KEYWORD_NULL:
       return "TOKEN_KEYWORD_NULL";
+    case TokenType::TOKEN_KEYWORD_STRUCT:
+      return "TOKEN_KEYWORD_STRUCT";
+    case TokenType::TOKEN_KEYWORD_UNION:
+      return "TOKEN_KEYWORD_UNION";
+    case TokenType::TOKEN_KEYWORD_PACKED:
+      return "TOKEN_KEYWORD_PACKED";
+    case TokenType::TOKEN_LEFT_SHIFT:
+      return "TOKEN_LEFT_SHIFT";
+    case TokenType::TOKEN_RIGHT_SHIFT:
+      return "TOKEN_RIGHT_SHIFT";
+    case TokenType::TOKEN_BITWISE_OR:
+      return "TOKEN_BITWISE_OR";
+    case TokenType::TOKEN_BITWISE_NOT:
+      return "TOKEN_BITWISE_NOT";
     case TokenType::TOKEN_SEMICOLON:
       return "TOKEN_SEMICOLON";
     case TokenType::TOKEN_COLON:

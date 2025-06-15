@@ -60,7 +60,7 @@ std::unique_ptr<TypeNode> ASTPrinter::visit(ExprStmtNode& node) {
 
 std::unique_ptr<TypeNode> ASTPrinter::visit(AssignmentExpr& node) {
   indent();
-  std::cout << "- Assignment(" << node.name << "):" << std::endl;
+  std::cout << "- Assignment(" << node.target->toString() << "):" << std::endl;
   if (node.value) {
     indentation_level++;
     indent();

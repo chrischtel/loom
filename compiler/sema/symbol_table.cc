@@ -49,6 +49,31 @@ bool SymbolTable::defineFunction(
   return define(name, info);
 }
 
+bool SymbolTable::defineStruct(
+    const std::string& name,
+    std::vector<std::pair<std::string, std::shared_ptr<TypeNode>>> fields) {
+  StructInfo struct_info;
+  struct_info.name = name;
+  struct_info.fields = std::move(fields);
+
+  SymbolInfo symbol;
+  symbol.kind = SymbolKind::STRUCT;
+  symbol.data = std::move(struct_info);
+
+  return define(name, symbol);
+}
+
+bool SymbolTable::defineUnion(
+    const std::string& name,
+    std::vector<std::pair<std::string, std::shared_ptr<TypeNode>>> fields) {
+  UnionInfo union_info{name, fields};
+  SymbolInfo info;
+  info.kind = SymbolKind::UNION;
+  info.data = union_info;
+
+  return define(name, info);
+}
+
 const VariableInfo* SymbolTable::lookupVariable(const std::string& name) const {
   const SymbolInfo* symbol = lookup(name);
   if (symbol && symbol->kind == SymbolKind::VARIABLE) {
@@ -64,6 +89,22 @@ const FunctionInfo* SymbolTable::lookupFunction(const std::string& name) const {
     return &std::get<FunctionInfo>(symbol->data);
   }
 
+  return nullptr;
+}
+
+const StructInfo* SymbolTable::lookupStruct(const std::string& name) const {
+  const SymbolInfo* symbol = lookup(name);
+  if (symbol && symbol->kind == SymbolKind::STRUCT) {
+    return &std::get<StructInfo>(symbol->data);
+  }
+  return nullptr;
+}
+
+const UnionInfo* SymbolTable::lookupUnion(const std::string& name) const {
+  const SymbolInfo* info = lookup(name);
+  if (info && info->kind == SymbolKind::UNION) {
+    return std::get_if<UnionInfo>(&info->data);
+  }
   return nullptr;
 }
 
@@ -91,4 +132,12 @@ bool SymbolTable::isVariable(const std::string& name) const {
 bool SymbolTable::isFunction(const std::string& name) const {
   const SymbolInfo* symbol = lookup(name);
   return symbol && symbol->kind == SymbolKind::FUNCTION;
+}
+
+bool SymbolTable::isStructDefined(const std::string& name) const {
+  return lookupStruct(name) != nullptr;
+}
+
+bool SymbolTable::isUnionDefined(const std::string& name) const {
+  return lookupUnion(name) != nullptr;
 }
