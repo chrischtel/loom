@@ -8,6 +8,7 @@
 
 // LLVM-Header
 #include "../syscalls/syscall_framework.hh"
+#include "../cli/cli.hh"  // For VerbosityLevel
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -61,11 +62,13 @@ class NullTypeNode;
 class CodeGen {
  public:
   CodeGen();
+  explicit CodeGen(loom::VerbosityLevel verbosity);
 
   // NEU: Akzeptiert einen Vektor von Statements
   void generate(const std::vector<std::unique_ptr<StmtNode>>& ast);
 
   void print_ir() const;
+  void write_ir_to_stream(std::ostream& stream);
   // Write IR to file
   void writeIRToFile(const std::string& filename) const;
 
@@ -77,7 +80,6 @@ class CodeGen {
   bool initializeLLVMTargets();
   // Public access to LLVM module for external compilation
   std::unique_ptr<llvm::Module> module;
-
  private:
   std::unique_ptr<llvm::LLVMContext> context;
   std::unique_ptr<llvm::IRBuilder<>> builder;
@@ -86,6 +88,7 @@ class CodeGen {
   std::map<std::string, llvm::Type*>
       variable_types;                // Track types for opaque pointers
   llvm::Function* current_function;  // For return statement handling
+  loom::VerbosityLevel verbosity_level;    // Control logging output
   // Dispatch-Methoden (unverändert)
   llvm::Value* codegen(ASTNode& node);
   llvm::Value* codegen(NumberLiteral& node);
@@ -115,7 +118,6 @@ class CodeGen {
 
   // Generate Windows entry point for freestanding executables
   void generateEntryPoint();
-
   // Cross-platform syscall support
   TargetPlatform detectTargetPlatform() const;
   llvm::Value* generateLinuxSyscall(const std::string& name,
@@ -124,4 +126,7 @@ class CodeGen {
                                     std::vector<llvm::Value*>& args);
   llvm::Value* generateWindowsSyscall(const std::string& name,
                                       std::vector<llvm::Value*>& args);
+
+  // Logging helper
+  void logMessage(loom::VerbosityLevel required, const std::string& message) const;
 };

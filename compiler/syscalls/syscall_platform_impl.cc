@@ -150,6 +150,78 @@ llvm::Value* SyscallFramework::generateWindowsSyscall(
                                       llvm::PointerType::getUnqual(*context))});
     }
 
+    case SyscallType::OPEN: {
+      if (args.empty()) throw std::runtime_error("OPEN requires filename");
+
+      llvm::Function* createFile = module->getFunction("CreateFileA");
+
+      // CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL,
+      // OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL) GENERIC_READ = 0x80000000,
+      // FILE_SHARE_READ = 0x00000001, OPEN_EXISTING = 3, FILE_ATTRIBUTE_NORMAL
+      // = 0x80
+      return builder->CreateCall(
+          createFile,
+          {
+              args[0],                        // filename
+              builder->getInt32(0x80000000),  // GENERIC_READ
+              builder->getInt32(0x00000001),  // FILE_SHARE_READ
+              llvm::ConstantPointerNull::get(
+                  llvm::PointerType::getUnqual(*context)),  // NULL security
+              builder->getInt32(3),                         // OPEN_EXISTING
+              builder->getInt32(0x80),  // FILE_ATTRIBUTE_NORMAL
+              llvm::ConstantPointerNull::get(
+                  llvm::PointerType::getUnqual(*context))  // NULL template
+          });
+    }
+
+    case SyscallType::CLOSE: {
+      if (args.empty()) throw std::runtime_error("CLOSE requires handle");
+
+      llvm::Function* closeHandle = module->getFunction("CloseHandle");
+      return builder->CreateCall(closeHandle, {args[0]});
+    }
+
+    case SyscallType::READ: {
+      if (args.size() < 3)
+        throw std::runtime_error("READ requires handle, buffer, length");
+
+      llvm::Function* readFile = module->getFunction("ReadFile");
+
+      // Convert length to 32-bit if needed
+      llvm::Value* length32 = args[2];
+      if (args[2]->getType()->isIntegerTy(64)) {
+        length32 = builder->CreateTrunc(args[2], builder->getInt32Ty());
+      }
+
+      llvm::Value* bytesRead =
+          builder->CreateAlloca(builder->getInt32Ty(), nullptr, "bytes_read");
+
+      return builder->CreateCall(
+          readFile,
+          {
+              args[0],    // handle
+              args[1],    // buffer
+              length32,   // length
+              bytesRead,  // bytes read
+              llvm::ConstantPointerNull::get(
+                  llvm::PointerType::getUnqual(*context))  // NULL overlapped
+          });
+    }
+
+    case SyscallType::GET_FILE_SIZE: {
+      if (args.empty())
+        throw std::runtime_error("GET_FILE_SIZE requires handle");
+
+      llvm::Function* getFileSize = module->getFunction("GetFileSize");
+      return builder->CreateCall(
+          getFileSize,
+          {
+              args[0],  // handle
+              llvm::ConstantPointerNull::get(
+                  llvm::PointerType::getUnqual(*context))  // NULL for high part
+          });
+    }
+
     default:
       throw std::runtime_error("Unsupported Windows syscall type");
   }

@@ -14,7 +14,18 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
-CodeGen::CodeGen() {
+CodeGen::CodeGen() : verbosity_level(loom::VerbosityLevel::NORMAL) {
+  context = std::make_unique<llvm::LLVMContext>();
+  module = std::make_unique<llvm::Module>("MyLoomModule", *context);
+  builder = std::make_unique<llvm::IRBuilder<>>(*context);
+  current_function = nullptr;
+
+  // Initialize the syscall framework
+  syscallFramework = std::make_unique<loom::SyscallFramework>(
+      context.get(), builder.get(), module.get());
+}
+
+CodeGen::CodeGen(loom::VerbosityLevel verbosity) : verbosity_level(verbosity) {
   context = std::make_unique<llvm::LLVMContext>();
   module = std::make_unique<llvm::Module>("MyLoomModule", *context);
   builder = std::make_unique<llvm::IRBuilder<>>(*context);
@@ -44,41 +55,57 @@ void CodeGen::generate(const std::vector<std::unique_ptr<StmtNode>>& ast) {
         "main function.");
     throw std::runtime_error("Missing main function");
   }
+  logMessage(loom::VerbosityLevel::VERBOSE,
+             "[CodeGen] Found main function in AST");
 
-  std::cout << "[CodeGen] Found main function in AST" << std::endl;
-
-  std::cout << "[CodeGen] Processing " << ast.size() << " statements..."
-            << std::endl;
+  logMessage(
+      loom::VerbosityLevel::VERBOSE,
+      "[CodeGen] Processing " + std::to_string(ast.size()) + " statements...");
 
   try {
     for (size_t i = 0; i < ast.size(); ++i) {
-      std::cout << "[CodeGen] Processing statement " << (i + 1) << "/"
-                << ast.size() << std::endl;
+      logMessage(loom::VerbosityLevel::DEBUG,
+                 "[CodeGen] Processing statement " + std::to_string(i + 1) +
+                     "/" + std::to_string(ast.size()));
       codegen(*ast[i]);
-      std::cout << "[CodeGen] Statement " << (i + 1)
-                << " completed successfully" << std::endl;
+      logMessage(loom::VerbosityLevel::DEBUG, "[CodeGen] Statement " +
+                                                  std::to_string(i + 1) +
+                                                  " completed successfully");
     }
   } catch (const std::exception& e) {
-    std::cout << "[CodeGen] Error during statement processing: " << e.what()
-              << std::endl;
-    std::cout << "[CodeGen] Printing IR so far:" << std::endl;
-    print_ir();
+    logMessage(loom::VerbosityLevel::NORMAL,
+               "[CodeGen] Error during statement processing: " +
+                   std::string(e.what()));
+    logMessage(loom::VerbosityLevel::DEBUG, "[CodeGen] Printing IR so far:");
+    if (verbosity_level >= loom::VerbosityLevel::DEBUG) {
+      print_ir();
+    }
     throw;
   }
-  std::cout << "[CodeGen] Verifying function..." << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG, "[CodeGen] Verifying function...");
   for (auto& function : *module) {
     llvm::verifyFunction(function);
   }
-  std::cout << "[CodeGen] Function verification completed" << std::endl;
-
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Function verification completed");
   generateEntryPoint();
 
-  std::cout << "[CodeGen] Code generation completed successfully!" << std::endl;
-  std::cout << "[CodeGen] Generated LLVM IR:" << std::endl;
-  print_ir();
+  logMessage(loom::VerbosityLevel::VERBOSE,
+             "[CodeGen] Code generation completed successfully!");
+  if (verbosity_level >= loom::VerbosityLevel::DEBUG) {
+    logMessage(loom::VerbosityLevel::DEBUG, "[CodeGen] Generated LLVM IR:");
+    print_ir();
+  }
 }
 
 void CodeGen::print_ir() const { module->print(llvm::outs(), nullptr); }
+
+void CodeGen::write_ir_to_stream(std::ostream& stream) {
+  std::string ir_str;
+  llvm::raw_string_ostream llvm_stream(ir_str);
+  module->print(llvm_stream, nullptr);
+  stream << ir_str;
+}
 
 void CodeGen::writeIRToFile(const std::string& filename) const {
   std::error_code EC;
@@ -93,9 +120,9 @@ void CodeGen::writeIRToFile(const std::string& filename) const {
 
 void CodeGen::generateEntryPoint() {
   TargetPlatform platform = detectTargetPlatform();
-
   if (platform == TargetPlatform::Windows) {
-    std::cout << "[CodeGen] Generating Windows entry point..." << std::endl;
+    logMessage(loom::VerbosityLevel::DEBUG,
+               "[CodeGen] Generating Windows entry point...");
 
     llvm::FunctionType* entryType = llvm::FunctionType::get(
         builder->getVoidTy(),  // void return (Windows entry points return void)
@@ -136,10 +163,10 @@ void CodeGen::generateEntryPoint() {
     }
     builder->CreateCall(exitProcess, {mainResult});
     builder->CreateUnreachable();
-
   } else if (platform == TargetPlatform::Linux ||
              platform == TargetPlatform::MacOS) {
-    std::cout << "[CodeGen] Generating Unix-style entry point..." << std::endl;
+    logMessage(loom::VerbosityLevel::DEBUG,
+               "[CodeGen] Generating Unix-style entry point...");
 
     // For Linux/macOS, create _start function that calls main and then exit
     // syscall
@@ -179,15 +206,17 @@ void CodeGen::generateEntryPoint() {
     builder->CreateUnreachable();
   }
 
-  std::cout << "[CodeGen] Entry point generation completed" << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Entry point generation completed");
 }
 
 // Platform detection based on target triple
 TargetPlatform CodeGen::detectTargetPlatform() const {
   llvm::Triple targetTriple(module->getTargetTriple());
   std::string targetTripleStr = targetTriple.str();
-  std::cout << "[CodeGen] Detecting platform from target triple: "
-            << targetTripleStr << std::endl;
+  logMessage(
+      loom::VerbosityLevel::DEBUG,
+      "[CodeGen] Detecting platform from target triple: " + targetTripleStr);
 
   if (targetTripleStr.find("windows") != std::string::npos ||
       targetTripleStr.find("win32") != std::string::npos ||
@@ -199,19 +228,21 @@ TargetPlatform CodeGen::detectTargetPlatform() const {
              targetTripleStr.find("darwin") != std::string::npos ||
              targetTripleStr.find("macos") != std::string::npos) {
     return TargetPlatform::MacOS;
-  }
-  // Fallback: detect from preprocessor macros at compile time
+  }  // Fallback: detect from preprocessor macros at compile time
 #ifdef _WIN32
-  std::cout << "[CodeGen] Defaulting to Windows platform" << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Defaulting to Windows platform");
   return TargetPlatform::Windows;
 #elif defined(__linux__)
-  std::cout << "[CodeGen] Defaulting to Linux platform" << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Defaulting to Linux platform");
   return TargetPlatform::Linux;
 #elif defined(__APPLE__)
-  std::cout << "[CodeGen] Defaulting to macOS platform" << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Defaulting to macOS platform");
   return TargetPlatform::MacOS;
 #else
-  std::cout << "[CodeGen] Unknown target platform" << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG, "[CodeGen] Unknown target platform");
   return TargetPlatform::Unknown;
 #endif
 }
@@ -219,7 +250,8 @@ TargetPlatform CodeGen::detectTargetPlatform() const {
 // Linux syscall implementation using inline assembly
 llvm::Value* CodeGen::generateLinuxSyscall(const std::string& name,
                                            std::vector<llvm::Value*>& args) {
-  std::cout << "[CodeGen] Generating Linux syscall: " << name << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Generating Linux syscall: " + name);
 
   if (name == "print" && args.size() >= 1) {
     std::string asmStr = "syscall";
@@ -316,7 +348,8 @@ llvm::Value* CodeGen::generateLinuxSyscall(const std::string& name,
 // macOS syscall implementation using inline assembly
 llvm::Value* CodeGen::generateMacOSSyscall(const std::string& name,
                                            std::vector<llvm::Value*>& args) {
-  std::cout << "[CodeGen] Generating macOS syscall: " << name << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Generating macOS syscall: " + name);
 
   if (name == "print" && args.size() >= 1) {
     // macOS write syscall: 0x2000004 (BSD syscall numbers are offset by
@@ -413,7 +446,8 @@ llvm::Value* CodeGen::generateMacOSSyscall(const std::string& name,
 // Windows syscall implementation using Windows API calls
 llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
                                              std::vector<llvm::Value*>& args) {
-  std::cout << "[CodeGen] Generating Windows syscall: " << name << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Generating Windows syscall: " + name);
   if (name == "print" && args.size() >= 1) {
     // Check if the argument is an integer or a string
     llvm::Type* argType = args[0]->getType();
@@ -974,8 +1008,9 @@ llvm::Value* CodeGen::generateWindowsSyscall(const std::string& name,
 
 // --- Helper: AST-Typ zu LLVM-Typ ---
 llvm::Type* CodeGen::typeToLLVMType(TypeNode& type) {
-  std::cout << "[CodeGen] Converting TypeNode to LLVM type, typeid: "
-            << typeid(type).name() << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] Converting TypeNode to LLVM type, typeid: " +
+                 std::string(typeid(type).name()));
 
   if (auto* int_type = dynamic_cast<IntegerTypeNode*>(&type)) {
     std::cout << "[CodeGen] Found IntegerTypeNode with bit_width: "
@@ -1049,9 +1084,9 @@ llvm::Type* CodeGen::typeToLLVMType(TypeNode& type) {
     // Null type is represented as a void pointer
     return llvm::PointerType::getUnqual(*context);
   }
-
-  std::cout << "[CodeGen] ERROR: Unknown TypeNode, type info: "
-            << typeid(type).name() << std::endl;
+  logMessage(loom::VerbosityLevel::DEBUG,
+             "[CodeGen] ERROR: Unknown TypeNode, type info: " +
+                 std::string(typeid(type).name()));
   throw std::runtime_error("Unknown TypeNode for CodeGen");
 }
 
@@ -1807,6 +1842,36 @@ llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
                                                        syscallArgs);
             }
             break;
+          case 2:  // open
+            if (!syscallArgs.empty()) {
+              return syscallFramework->generateSyscall(loom::SyscallType::OPEN,
+                                                       syscallArgs);
+            }
+            break;
+          case 6:  // close
+            if (!syscallArgs.empty()) {
+              return syscallFramework->generateSyscall(loom::SyscallType::CLOSE,
+                                                       syscallArgs);
+            }
+            break;
+          case 50:  // malloc (custom number)
+            if (!syscallArgs.empty()) {
+              return syscallFramework->generateSyscall(
+                  loom::SyscallType::MALLOC, syscallArgs);
+            }
+            break;
+          case 51:  // free (custom number)
+            if (!syscallArgs.empty()) {
+              return syscallFramework->generateSyscall(loom::SyscallType::FREE,
+                                                       syscallArgs);
+            }
+            break;
+          case 99:  // get_file_size (custom number)
+            if (!syscallArgs.empty()) {
+              return syscallFramework->generateSyscall(
+                  loom::SyscallType::GET_FILE_SIZE, syscallArgs);
+            }
+            break;
           default:
             return syscallFramework->generateSyscall(loom::SyscallType::GENERIC,
                                                      args);
@@ -2386,8 +2451,14 @@ llvm::Value* CodeGen::codegen(RangeExpr& node) {
   // just return null - ranges are handled specially in for loops
   std::cout << "[CodeGen] RangeExpr used outside of for loop context"
             << std::endl;
-
   // Avoid unused parameter warning
   (void)node;
   return nullptr;
+}
+
+void CodeGen::logMessage(loom::VerbosityLevel required,
+                         const std::string& message) const {
+  if (verbosity_level >= required) {
+    std::cout << message << std::endl;
+  }
 }

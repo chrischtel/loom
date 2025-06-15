@@ -584,6 +584,63 @@ void SyscallFramework::declareWindowsAPIs() {
     llvm::Function::Create(virtualFreeType, llvm::Function::ExternalLinkage,
                            "VirtualFree", module);
   }
+
+  // CreateFile
+  if (!module->getFunction("CreateFileA")) {
+    llvm::FunctionType* createFileType = llvm::FunctionType::get(
+        llvm::PointerType::getUnqual(*context),
+        {
+            llvm::PointerType::getUnqual(*context),  // LPCSTR
+            builder->getInt32Ty(),                   // DWORD (access)
+            builder->getInt32Ty(),                   // DWORD (share)
+            llvm::PointerType::getUnqual(*context),  // LPSECURITY_ATTRIBUTES
+            builder->getInt32Ty(),                   // DWORD (creation)
+            builder->getInt32Ty(),                   // DWORD (flags)
+            llvm::PointerType::getUnqual(*context)   // HANDLE (template)
+        },
+        false);
+    llvm::Function::Create(createFileType, llvm::Function::ExternalLinkage,
+                           "CreateFileA", module);
+  }
+
+  // ReadFile
+  if (!module->getFunction("ReadFile")) {
+    llvm::FunctionType* readFileType = llvm::FunctionType::get(
+        builder->getInt32Ty(),
+        {
+            llvm::PointerType::getUnqual(*context),  // HANDLE
+            llvm::PointerType::getUnqual(*context),  // LPVOID
+            builder->getInt32Ty(),                   // DWORD
+            llvm::PointerType::getUnqual(*context),  // LPDWORD
+            llvm::PointerType::getUnqual(*context)   // LPOVERLAPPED
+        },
+        false);
+    llvm::Function::Create(readFileType, llvm::Function::ExternalLinkage,
+                           "ReadFile", module);
+  }
+
+  // CloseHandle
+  if (!module->getFunction("CloseHandle")) {
+    llvm::FunctionType* closeHandleType = llvm::FunctionType::get(
+        builder->getInt32Ty(),
+        {llvm::PointerType::getUnqual(*context)},  // HANDLE
+        false);
+    llvm::Function::Create(closeHandleType, llvm::Function::ExternalLinkage,
+                           "CloseHandle", module);
+  }
+
+  // GetFileSize
+  if (!module->getFunction("GetFileSize")) {
+    llvm::FunctionType* getFileSizeType = llvm::FunctionType::get(
+        builder->getInt32Ty(),
+        {
+            llvm::PointerType::getUnqual(*context),  // HANDLE
+            llvm::PointerType::getUnqual(*context)   // LPDWORD (high part)
+        },
+        false);
+    llvm::Function::Create(getFileSizeType, llvm::Function::ExternalLinkage,
+                           "GetFileSize", module);
+  }
 }
 
 void SyscallFramework::declareLinuxSyscalls() {

@@ -33,6 +33,7 @@ enum class SyscallType {
   FREE,
   MMAP,
   MUNMAP,
+  GET_FILE_SIZE,
   GENERIC
 };
 
