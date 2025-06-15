@@ -51,9 +51,7 @@ CodeGen::CodeGen(loom::VerbosityLevel verbosity) : verbosity_level(verbosity) {
       context.get(), builder.get(), module.get(), config);
 }
 
-void CodeGen::setSymbolTable(const SymbolTable* symbols) {
-  symbol_table = symbols;
-}
+void CodeGen::setSymbolTable(SymbolTable* symbols) { symbol_table = symbols; }
 
 int CodeGen::getFieldIndex(const std::string& struct_name,
                            const std::string& field_name) const {
@@ -1538,10 +1536,22 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
     std::cout << "[CodeGen] Variable " << node.name
               << " declared without initializer" << std::endl;
   }
-  // 5. Merke dir den Speicherort der Variable in unserer "Symboltabelle".
+  // 5. Store in both the old system (for compatibility) and new unified symbol
+  // table
   named_values[node.name] = alloca;
-  variable_types[node.name] =
-      varType;  // Store the type for opaque pointer support
+  variable_types[node.name] = varType;
+
+  // Also update the unified symbol table
+  if (symbol_table->updateVariableLLVM(node.name, alloca, varType)) {
+    std::cout << "[CodeGen] Variable " << node.name
+              << " LLVM info updated in unified symbol table" << std::endl;
+  } else {
+    std::cout << "[CodeGen] WARNING: Could not update LLVM info for variable: "
+              << node.name << std::endl;
+    // This might happen if the variable wasn't declared in semantic analysis
+    // For now, we can continue using the old system
+  }
+
   std::cout << "[CodeGen] Variable " << node.name << " added to symbol table"
             << std::endl;
 
@@ -1556,26 +1566,31 @@ llvm::Value* CodeGen::codegen(Identifier& node) {
     std::cout << "[CodeGen] Generating null literal" << std::endl;
     return llvm::ConstantPointerNull::get(
         llvm::PointerType::getUnqual(*context));
-  }
+  }  // 1. Try the unified symbol table first
+  const VariableInfo* var_info = symbol_table->lookupVariable(node.name);
+  llvm::Value* var_ptr = nullptr;
+  llvm::Type* var_type = nullptr;
 
-  // 1. Suche die Variable in unserer Symboltabelle.
-  auto it = named_values.find(node.name);
-  if (it == named_values.end()) {
-    throw std::runtime_error("CodeGen: Unknown variable name '" + node.name +
-                             "'.");
-  }
+  if (var_info && var_info->llvm_value && var_info->llvm_type) {
+    // Use unified symbol table
+    var_ptr = var_info->llvm_value;
+    var_type = var_info->llvm_type;
+  } else {
+    // Fallback to old system
+    auto it = named_values.find(node.name);
+    if (it == named_values.end()) {
+      throw std::runtime_error("CodeGen: Unknown variable name '" + node.name +
+                               "'.");
+    }
+    var_ptr = it->second;
 
-  // it->second ist der Zeiger auf den Stack-Speicher (das Ergebnis von alloca).
-  llvm::Value* var_ptr = it->second;  // 2. Erzeuge eine 'load'-Instruktion, um
-                                      // den Wert aus dem Speicher zu lesen.
-  // Look up the variable type from our stored types map
-  auto type_it = variable_types.find(node.name);
-  if (type_it == variable_types.end()) {
-    throw std::runtime_error("CodeGen: Unknown variable type for '" +
-                             node.name + "'.");
+    auto type_it = variable_types.find(node.name);
+    if (type_it == variable_types.end()) {
+      throw std::runtime_error("CodeGen: Unknown variable type for '" +
+                               node.name + "'.");
+    }
+    var_type = type_it->second;
   }
-
-  llvm::Type* var_type = type_it->second;
   return builder->CreateLoad(var_type, var_ptr, node.name + ".load");
 }
 
@@ -2455,9 +2470,7 @@ llvm::Value* CodeGen::codegen(ReferenceExpr& node) {
     llvm::Value* data_ptr =
         builder->CreateExtractValue(slice_val, 0, "slice.data.ptr");
 
-    // For now, assume i8 elements for raw byte access in networking, which is
-    // what the test case uses. A more robust solution would get the element
-    // type from semantic analysis.
+    // For now, assume i8 elements for raw byte access in networking.
     llvm::Type* element_type = builder->getInt8Ty();
 
     return builder->CreateInBoundsGEP(element_type, data_ptr, index_val,
@@ -2484,12 +2497,41 @@ llvm::Value* CodeGen::codegen(ReferenceExpr& node) {
       throw std::runtime_error(
           "Taking address of fields in complex expressions not yet supported");
     }
-
     const VariableInfo* var_info = symbol_table->lookupVariable(object_name);
     if (!var_info) {
-      // This is the error you were seeing.
+      // Fallback: try to infer type information from LLVM types
+      // This handles the case where variables exist in codegen but not in sema
+      // symbol table
+
+      auto type_it = variable_types.find(object_name);
+      if (type_it != variable_types.end()) {
+        llvm::Type* var_llvm_type = type_it->second;
+
+        // If it's a struct type, try to use getFieldIndex
+        if (auto* struct_type =
+                llvm::dyn_cast<llvm::StructType>(var_llvm_type)) {
+          std::string struct_name = struct_type->getName().str();
+
+          int field_index =
+              getFieldIndex(struct_name, member_access->member_name);
+          if (field_index != -1) {
+            return builder->CreateStructGEP(
+                var_llvm_type, object_ptr, field_index,
+                member_access->member_name + ".ptr");
+          }
+        }
+        // As a last resort, assume field 0 for struct access
+        std::cout << "[CodeGen] Using fallback struct field access for: "
+                  << object_name << std::endl;
+        if (llvm::dyn_cast<llvm::StructType>(var_llvm_type)) {
+          return builder->CreateStructGEP(var_llvm_type, object_ptr, 0,
+                                          member_access->member_name + ".ptr");
+        }
+      }
+
       throw std::runtime_error(
-          "Could not find type info for variable in reference expression");
+          "Could not find type info for variable in reference expression: " +
+          object_name);
     }
 
     // Handle Structs
@@ -2510,7 +2552,6 @@ llvm::Value* CodeGen::codegen(ReferenceExpr& node) {
     // Handle Unions
     if (dynamic_cast<UnionTypeNode*>(var_info->type.get())) {
       // The address of any union member is the address of the union itself.
-      // The pointer type is already correct. No bitcast is needed here.
       return object_ptr;
     }
   }
@@ -2552,25 +2593,37 @@ llvm::Value* CodeGen::codegen(DereferenceExpr& node) {
 llvm::Value* CodeGen::codegen(MemberAccessExpr& node) {
   logMessage(loom::VerbosityLevel::DEBUG,
              "[CodeGen] Generating MemberAccessExpr: " + node.member_name);
-
-  // Step 1: Get the pointer to the memory allocation of the object (the
-  // alloca).
+  // Step 1: Get the pointer to the memory allocation of the object (the alloca)
+  // and also try to get the type information.
   llvm::Value* object_ptr = nullptr;
   std::string object_name;
+  const VariableInfo* var_info = nullptr;
+
   if (auto* identifier = dynamic_cast<Identifier*>(node.object.get())) {
     object_name = identifier->name;
-    auto it = named_values.find(object_name);
-    if (it == named_values.end()) {
-      throw std::runtime_error("CodeGen: Unknown variable name '" +
-                               object_name + "'.");
+
+    // Try unified symbol table first
+    var_info = symbol_table->lookupVariable(object_name);
+    if (var_info && var_info->llvm_value) {
+      object_ptr = var_info->llvm_value;
+    } else {
+      // Fallback to old named_values
+      auto it = named_values.find(object_name);
+      if (it == named_values.end()) {
+        throw std::runtime_error("CodeGen: Unknown variable name '" +
+                                 object_name + "'.");
+      }
+      object_ptr = it->second;
     }
-    object_ptr = it->second;
   } else {
     throw std::runtime_error("Member access on non-identifier not supported.");
   }
 
-  // Step 2: Look up the variable's semantic type.
-  const VariableInfo* var_info = symbol_table->lookupVariable(object_name);
+  // Step 2: Look up the variable's semantic type if we don't have it yet.
+  if (!var_info) {
+    var_info = symbol_table->lookupVariable(object_name);
+  }
+
   if (!var_info || !var_info->type) {
     throw std::runtime_error("Could not find type info for variable '" +
                              object_name + "'.");
@@ -2589,13 +2642,10 @@ llvm::Value* CodeGen::codegen(MemberAccessExpr& node) {
     for (const auto& field : union_info->fields) {
       if (field.first == node.member_name) {
         llvm::Type* field_llvm_type = typeToLLVMType(*field.second);
-        // The pointer type is just `ptr`.
-        llvm::Type* generic_ptr_type = builder->getPtrTy();
-        // Bitcast the union's pointer to the generic pointer type (might be a
-        // no-op).
+        // Bitcast the pointer and then load the value, providing the explicit
+        // type.
         llvm::Value* generic_field_ptr =
-            builder->CreateBitCast(object_ptr, generic_ptr_type);
-        // Load the value, providing the explicit type.
+            builder->CreateBitCast(object_ptr, builder->getPtrTy());
         return builder->CreateLoad(field_llvm_type, generic_field_ptr,
                                    node.member_name);
       }

@@ -9,11 +9,21 @@
 
 #include "parser/ast.hh"
 
+// Forward declare LLVM types to avoid including LLVM headers in header
+namespace llvm {
+class Value;
+class Type;
+}  // namespace llvm
+
 enum class SymbolKind { VARIABLE, FUNCTION, TYPE, STRUCT, UNION };
 
 struct VariableInfo {
   VarDeclKind kind;
   std::shared_ptr<TypeNode> type;
+
+  // LLVM codegen information
+  llvm::Value* llvm_value = nullptr;  // The alloca instruction
+  llvm::Type* llvm_type = nullptr;    // The LLVM type
 };
 
 struct FunctionInfo {
@@ -68,6 +78,11 @@ class SymbolTable {
   const FunctionInfo* lookupFunction(const std::string& name) const;
   const StructInfo* lookupStruct(const std::string& name) const;
   const UnionInfo* lookupUnion(const std::string& name) const;
+
+  // LLVM codegen support - update variable with LLVM information
+  bool updateVariableLLVM(const std::string& name, llvm::Value* llvm_value,
+                          llvm::Type* llvm_type);
+  VariableInfo* lookupVariableMutable(const std::string& name);
 
   // Type checking helpers
   bool isFunction(const std::string& name) const;

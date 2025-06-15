@@ -17,6 +17,7 @@ class SemanticAnalyzer : public ASTVisitor {
   void analyze(const std::vector<std::unique_ptr<StmtNode>>& ast);
   bool hasError() const { return had_error; }
   const SymbolTable& getSymbolTable() const { return symbols; }
+  SymbolTable& getSymbolTable() { return symbols; }  // Add mutable version
 
   std::unique_ptr<TypeNode> visit(NumberLiteral& node) override;
   std::unique_ptr<TypeNode> visit(StringLiteral& node) override;

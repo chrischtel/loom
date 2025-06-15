@@ -141,3 +141,29 @@ bool SymbolTable::isStructDefined(const std::string& name) const {
 bool SymbolTable::isUnionDefined(const std::string& name) const {
   return lookupUnion(name) != nullptr;
 }
+
+// LLVM codegen support methods
+bool SymbolTable::updateVariableLLVM(const std::string& name,
+                                     llvm::Value* llvm_value,
+                                     llvm::Type* llvm_type) {
+  for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+    auto found = it->find(name);
+    if (found != it->end() && found->second.kind == SymbolKind::VARIABLE) {
+      VariableInfo& var_info = std::get<VariableInfo>(found->second.data);
+      var_info.llvm_value = llvm_value;
+      var_info.llvm_type = llvm_type;
+      return true;
+    }
+  }
+  return false;
+}
+
+VariableInfo* SymbolTable::lookupVariableMutable(const std::string& name) {
+  for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+    auto found = it->find(name);
+    if (found != it->end() && found->second.kind == SymbolKind::VARIABLE) {
+      return &std::get<VariableInfo>(found->second.data);
+    }
+  }
+  return nullptr;
+}

@@ -74,7 +74,7 @@ class CodeGen {
   CodeGen();
   explicit CodeGen(loom::VerbosityLevel verbosity);
 
-  void setSymbolTable(const SymbolTable* symbols);
+  void setSymbolTable(SymbolTable* symbols);  // Now takes mutable pointer
 
   // NEU: Akzeptiert einen Vektor von Statements
   void generate(const std::vector<std::unique_ptr<StmtNode>>& ast);
@@ -97,12 +97,12 @@ class CodeGen {
   std::unique_ptr<llvm::LLVMContext> context;
   std::unique_ptr<llvm::IRBuilder<>> builder;
   std::unique_ptr<loom::SyscallFramework> syscallFramework;
+  // Keep both systems during transition
   std::map<std::string, llvm::Value*> named_values;
-  std::map<std::string, llvm::Type*>
-      variable_types;                    // Track types for opaque pointers
+  std::map<std::string, llvm::Type*> variable_types;
   llvm::Function* current_function;      // For return statement handling
   loom::VerbosityLevel verbosity_level;  // Control logging output
-  const SymbolTable* symbol_table;       // Access to struct definitions
+  SymbolTable* symbol_table;             // Unified symbol table
   // Dispatch-Methoden (unverändert)
   llvm::Value* codegen(ASTNode& node);
   llvm::Value* codegen(NumberLiteral& node);
