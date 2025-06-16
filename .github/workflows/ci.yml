@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ master, dev, ci_testing, experiments ]
+    branches: [ main, dev, ci_testing, experiments ]
   pull_request:
-    branches: [ master, dev ]
+    branches: [ main, dev ]
   workflow_dispatch:
 
 jobs:
@@ -60,8 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     # This job depends on the successful completion of the main release builds
     needs: [ windows-msvc, linux-clang, macos-clang ]
-    # Only run when pushing to the master branch
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    # Only run when pushing to the main branch
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write # Required to create a release
 
@@ -79,7 +79,7 @@ jobs:
         with:
           tag_name: latest-prerelease
           name: "Latest Development Build"
-          body: "Automated pre-release build. Contains the latest features and fixes from the master branch."
+          body: "Automated pre-release build. Contains the latest features and fixes from the main branch."
           prerelease: true
           # This will automatically delete the previous 'latest-prerelease' tag and release
           make_latest: 'legacy'
