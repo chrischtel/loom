@@ -96,8 +96,15 @@ jobs:
     - name: Setup LLVM (Windows)
       if: runner.os == 'Windows'
       run: |
-        choco install llvm --version=17.0.6
-        echo "LLVM_DIR=C:/Program Files/LLVM/lib/cmake/llvm" >> $env:GITHUB_ENV
+        # Use the pre-installed LLVM on GitHub Actions runners
+        $llvmPath = Get-ChildItem "C:\Program Files\LLVM*" | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $llvmPath) {
+          # Fallback: install LLVM if not found
+          choco install llvm --force
+          $llvmPath = "C:\Program Files\LLVM"
+        }
+        echo "LLVM_DIR=$llvmPath\lib\cmake\llvm" >> $env:GITHUB_ENV
+        echo "Using LLVM at: $llvmPath"
 
     - name: Install Ninja (Linux/macOS)
       if: runner.os != 'Windows'
