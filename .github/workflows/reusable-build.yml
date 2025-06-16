@@ -85,13 +85,14 @@ jobs:
             } else {
               $possiblePaths = @("/usr/local", "/usr", "/opt/llvm")
             }
-            
-            foreach ($path in $possiblePaths) {
+              foreach ($path in $possiblePaths) {
               if (Test-Path "$path/bin/llvm-config") {
                 Write-Host "Found LLVM at: $path"
                 echo "llvm_cmake_dir=$path/lib/cmake/llvm" >> $env:GITHUB_OUTPUT
                 break
-              }            }
+              }
+            }
+          }
           
           # Check for CMake
           Write-Host "=== CMake Information ==="
