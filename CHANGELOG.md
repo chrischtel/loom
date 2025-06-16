@@ -1,68 +1,87 @@
 # Loom Language Changelog
 
-## [v0.1.0-alpha.3] - [14/6/2025] - Phase 1 MVP: Arrays, For Loops & Ranges
+## [v0.1.0-alpha.3] - UNRELEASED - Phase 1 MVP: String Functions & Network Programming
 ### Added
+- **String builtin functions**:
+  - `$$strlen(str)` - Calculate string length automatically
+  - Full LLVM implementation with null-terminator detection
+  - Seamless integration with string literals and pointers
+- **Enhanced type system**:
+  - Automatic integer width promotion in binary expressions
+  - Improved casting between integer types (i8, i16, i32, i64)
+  - Better string literal to pointer conversion
+- **Network programming support**:
+  - Windows socket syscalls: `$$socket`, `$$bind`, `$$listen`, `$$accept`, `$$send`, `$$closesocket`
+  - Winsock initialization: `$$WSAStartup`, `$$WSACleanup`
+  - Complete HTTP server capabilities
+- **Unified symbol table**:
+  - Symbol table consistency between semantic analysis and codegen
+  - Proper variable scoping in function contexts
+  - Fixed union member access in codegen
 - **Array literals** with unique `@` syntax: `@[1, 2, 3]`
-- **Array indexing** with unique `@` syntax: `arr@[index]`
-- **For loops** with parentheses syntax: `for(i in range)`
-- **Range expressions**:
-  - Exclusive ranges: `0..10` (0 to 9)
-  - Inclusive ranges: `0..=10` (0 to 10)
+- **Array indexing** with bracket syntax: `arr[index]`
 - **Array type system**:
   - Slice types: `[]i32` for dynamic arrays
   - Array literal to slice conversion
   - Type checking for array elements
-- **Enhanced semantic analyzer**:
-  - Fixed array literal type consistency checking
-  - Integer literal type unification
-  - Loop variable scoping
-- **LLVM code generation**:
-  - Array literals generate proper stack-allocated arrays
-  - Array-to-slice conversion with `{ ptr, length }` struct
-  - For loop control flow with proper basic blocks
-  - Range evaluation (both exclusive and inclusive)
 
 ### Enhanced
-- Scanner recognizes new tokens: `@`, `..`, `..=`, `for`, `in`
-- Parser builds AST nodes: `ArrayLiteralExpr`, `IndexExpr`, `ForStmtNode`, `RangeExpr`
-- Type casting system supports array-to-slice conversion
-- Integer printing support in Windows syscalls (placeholder implementation)
+- **Codegen improvements**:
+  - Function scope management in symbol table
+  - Type node cloning for proper memory management
+  - Union field access validation
+  - Integer width mismatch handling
+- **String handling**:
+  - Clean string literal usage in network code
+  - Automatic length calculation eliminates manual byte counting
+  - Proper HTTP protocol implementation
+- Scanner recognizes array tokens and string functions
+- Parser builds AST nodes for arrays and builtin calls
+- Type casting system supports comprehensive type conversions
 
 ### Examples
 ```loom
+// String length calculation with $$strlen
+func test_strings() {
+    let message: *i8 = cast(*i8, "Hello, World!");
+    let length: i32 = $$strlen(message);  // Returns 13
+    $$print("Message length: ");
+    $$print(length);
+}
+
+// HTTP Server using $$strlen for proper response handling
+func http_server() {
+    // Network setup...
+    let status: *i8 = cast(*i8, "HTTP/1.1 200 OK\r\n");
+    let html: *i8 = cast(*i8, "<!DOCTYPE html><html>...</html>");
+    
+    // Automatic length calculation
+    let status_len: i32 = $$strlen(status);
+    let html_len: i32 = $$strlen(html);
+    
+    // Send response with correct lengths
+    $$send(client_socket, status, status_len, 0);
+    $$send(client_socket, html, html_len, 0);
+}
+
 // Array literals and indexing
 func test_arrays() {
     let arr: []i32 = @[10, 20, 30];
-    let val: i32 = arr@[0];  // Gets 10
-}
-
-// For loops with ranges
-func test_loops() {
-    // Exclusive range (0, 1, 2, 3, 4)
-    for(i in 0..5) {
-        $$print(i);
-    }
-    
-    // Inclusive range (1, 2, 3)
-    for(j in 1..=3) {
-        $$print(j);
-    }
+    let val: i32 = arr[0];  // Gets 10
 }
 ```
 
 ### Known Bugs
-- **Array indexing semantic analysis failure**: Complex programs with array indexing may fail during semantic analysis due to variable scoping issues
-- **Integer printing shows placeholders**: Runtime integer variables print `<integer>` instead of actual values
-- **Hardcoded array sizes**: Array-to-slice conversion uses hardcoded size (3) instead of dynamic size detection
-- **Array indexing codegen incomplete**: IndexExpr codegen may not handle slice types correctly
-- **Function call semantic analysis**: Programs with multiple functions may fail semantic analysis after the first builtin call
-- **Symbol table scoping**: Variable lookup may fail in complex nested scopes with arrays
+- **For loops and ranges**: Not yet implemented (planned for future release)
+- **Symbol table edge cases**: Complex nested scopes may occasionally fail variable lookup
+- **HTTP Content-Length calculation**: Currently requires manual calculation for dynamic content
 
 ### Technical Limitations
-- Array indexing works in simple cases but fails in complex multi-function programs
-- Integer printing is compile-time only (constants work, runtime variables show placeholders)
-- Array sizes must be small and are hardcoded in type conversion
-- Phase 1 focuses on syntax and basic functionality rather than robust runtime behavior
+- String functions work perfectly for null-terminated strings
+- Network programming requires Windows platform (Winsock dependency)
+- Array functionality is basic but stable
+- HTTP server handles one request per execution (design choice for simplicity)
+- $$strlen operates on runtime strings - proper C-style null termination required
 
 ---
 
