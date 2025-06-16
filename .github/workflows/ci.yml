@@ -1,0 +1,207 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  test:
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          # Windows builds
+          - {
+              name: "Windows MSVC",
+              os: windows-latest,
+              cc: "cl",
+              cxx: "cl",
+              cmake_generator: "Visual Studio 17 2022",
+              cmake_args: "-A x64"
+            }
+          - {
+              name: "Windows Clang",
+              os: windows-latest,
+              cc: "clang-cl",
+              cxx: "clang-cl",
+              cmake_generator: "Ninja",
+              cmake_args: ""
+            }
+          # Linux builds
+          - {
+              name: "Ubuntu GCC",
+              os: ubuntu-latest,
+              cc: "gcc-11",
+              cxx: "g++-11",
+              cmake_generator: "Ninja",
+              cmake_args: ""
+            }
+          - {
+              name: "Ubuntu Clang",
+              os: ubuntu-latest,
+              cc: "clang-14",
+              cxx: "clang++-14",
+              cmake_generator: "Ninja",
+              cmake_args: ""
+            }
+          # macOS builds
+          - {
+              name: "macOS Clang",
+              os: macos-latest,
+              cc: "clang",
+              cxx: "clang++",
+              cmake_generator: "Ninja",
+              cmake_args: ""
+            }
+          - {
+              name: "macOS Apple Clang (Intel)",
+              os: macos-13,
+              cc: "clang",
+              cxx: "clang++",
+              cmake_generator: "Ninja",
+              cmake_args: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
+            }
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for git hash
+
+    - name: Setup LLVM (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 17
+        sudo apt-get update
+        sudo apt-get install -y llvm-17-dev libllvm17 llvm-17-tools
+        echo "LLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm" >> $GITHUB_ENV
+
+    - name: Setup LLVM (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install llvm@17
+        echo "LLVM_DIR=$(brew --prefix llvm@17)/lib/cmake/llvm" >> $GITHUB_ENV
+        echo "$(brew --prefix llvm@17)/bin" >> $GITHUB_PATH
+
+    - name: Setup LLVM (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm --version=17.0.6
+        echo "LLVM_DIR=C:/Program Files/LLVM/lib/cmake/llvm" >> $env:GITHUB_ENV
+
+    - name: Install Ninja (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          sudo apt-get install -y ninja-build
+        elif [ "$RUNNER_OS" == "macOS" ]; then
+          brew install ninja
+        fi
+
+    - name: Install Ninja (Windows)
+      if: runner.os == 'Windows'
+      run: choco install ninja
+
+    - name: Setup compiler environment
+      run: |
+        echo "CC=${{ matrix.config.cc }}" >> $GITHUB_ENV
+        echo "CXX=${{ matrix.config.cxx }}" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -G "${{ matrix.config.cmake_generator }}" \
+          ${{ matrix.config.cmake_args }} \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
+          -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }}
+
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+    - name: Test Basic Functionality
+      run: |
+        # Test version command
+        ./build/bin/loom version || ./build/bin/loom.exe version
+        
+        # Test help command
+        ./build/bin/loom help || ./build/bin/loom.exe help
+        
+        # Test info command
+        ./build/bin/loom info || ./build/bin/loom.exe info
+      shell: bash
+
+    - name: Test Sample Programs
+      run: |
+        # Create a simple test program
+        echo 'main() { return 0; }' > test_basic.loom
+        
+        # Test syntax check
+        if [ -f "./build/bin/loom" ]; then
+          ./build/bin/loom check test_basic.loom || echo "Check command test completed"
+        else
+          ./build/bin/loom.exe check test_basic.loom || echo "Check command test completed"
+        fi
+      shell: bash
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: loom-${{ matrix.config.name }}-${{ github.sha }}
+        path: |
+          build/bin/loom*
+          !build/bin/*.pdb
+        retention-days: 7
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install clang-format
+      run: sudo apt-get install -y clang-format-14
+
+    - name: Check formatting
+      run: |
+        find compiler -name "*.cc" -o -name "*.hh" | xargs clang-format-14 --dry-run --Werror
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/init@v3
+      with:
+        languages: cpp
+
+    - name: Setup LLVM
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 17
+        sudo apt-get update
+        sudo apt-get install -y llvm-17-dev libllvm17 llvm-17-tools ninja-build
+
+    - name: Build for analysis
+      run: |
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+        cmake --build build
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3

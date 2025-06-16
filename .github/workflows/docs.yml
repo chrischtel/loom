@@ -1,0 +1,166 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '*.md'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  check-docs:
+    name: Check Documentation
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install markdown linter
+      run: npm install -g markdownlint-cli
+
+    - name: Lint markdown files
+      run: |
+        # Create markdownlint config
+        cat > .markdownlint.json << 'EOF'
+        {
+          "MD013": { "line_length": 120 },
+          "MD033": false,
+          "MD041": false
+        }
+        EOF
+        
+        # Lint all markdown files
+        markdownlint README.md CHANGELOG.md docs/ || true
+
+    - name: Check for broken links
+      run: |
+        # Install markdown-link-check
+        npm install -g markdown-link-check
+        
+        # Check links in README and CHANGELOG
+        markdown-link-check README.md || true
+        markdown-link-check CHANGELOG.md || true
+        
+        # Check links in docs directory
+        find docs -name "*.md" -exec markdown-link-check {} \; || true
+
+  build-docs:
+    name: Build Documentation Site
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: |
+        # Create a simple documentation site
+        mkdir -p site
+        cd site
+        npm init -y
+        npm install --save-dev @11ty/eleventy
+
+    - name: Build documentation
+      run: |
+        # Create simple 11ty config
+        cat > site/.eleventy.js << 'EOF'
+        module.exports = function(eleventyConfig) {
+          eleventyConfig.addPassthroughCopy("assets");
+          eleventyConfig.setInputDirectory("../");
+          eleventyConfig.setOutputDirectory("_site");
+          eleventyConfig.setDataDirectory("_data");
+          eleventyConfig.setIncludesDirectory("_includes");
+          
+          return {
+            markdownTemplateEngine: "njk",
+            htmlTemplateEngine: "njk",
+            dataTemplateEngine: "njk"
+          };
+        };
+        EOF
+        
+        # Create index template
+        mkdir -p site/_includes
+        cat > site/_includes/layout.njk << 'EOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>{{ title }} - Loom Programming Language</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; }
+            code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 3px; }
+            pre { background: #f4f4f4; padding: 1rem; border-radius: 5px; overflow-x: auto; }
+            .nav { border-bottom: 1px solid #eee; margin-bottom: 2rem; padding-bottom: 1rem; }
+            .nav a { margin-right: 1rem; text-decoration: none; color: #0066cc; }
+            .nav a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <nav class="nav">
+            <a href="/">Home</a>
+            <a href="/README/">README</a>
+            <a href="/CHANGELOG/">Changelog</a>
+          </nav>
+          <main>
+            {{ content | safe }}
+          </main>
+        </body>
+        </html>
+        EOF
+        
+        # Create index page
+        cat > site/index.md << 'EOF'
+        ---
+        layout: layout.njk
+        title: Home
+        ---
+        # Loom Programming Language Documentation
+        
+        Welcome to the Loom programming language documentation.
+        
+        ## Getting Started
+        
+        - [README](README/) - General information and getting started
+        - [Changelog](CHANGELOG/) - Recent changes and releases
+        
+        ## Development
+        
+        This documentation is automatically built from the repository and deployed on every push to main.
+        EOF
+        
+        # Build site
+        cd site
+        npx @11ty/eleventy
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.ref == 'refs/heads/main'
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./site/_site
+        force_orphan: true

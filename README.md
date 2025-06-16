@@ -1,5 +1,11 @@
 # Loom Programming Language
 
+[![CI](https://github.com/chrischtel/loom/actions/workflows/ci.yml/badge.svg)](https://github.com/chrischtel/loom/actions/workflows/ci.yml)
+[![Release](https://github.com/chrischtel/loom/actions/workflows/release.yml/badge.svg)](https://github.com/chrischtel/loom/actions/workflows/release.yml)
+[![Nightly](https://github.com/chrischtel/loom/actions/workflows/nightly.yml/badge.svg)](https://github.com/chrischtel/loom/actions/workflows/nightly.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 **Structured Freedom**: A systems programming language that makes the safe, high-performance path the most ergonomic one, while providing clear escape hatches when you need to talk directly to the metal.
 
 ## What is Loom?
@@ -74,25 +80,72 @@ func main() i32 {
 }
 ```
 
-## Building and Usage
+## Installation
+
+### Quick Install (Recommended)
+
+**Linux/macOS:**
+```bash
+curl -sSL https://raw.githubusercontent.com/chrischtel/loom/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/chrischtel/loom/main/install.ps1 | iex
+```
+
+### Manual Download
+
+Download pre-built binaries from the [releases page](https://github.com/chrischtel/loom/releases):
+
+- **Stable releases**: Latest stable version
+- **Pre-releases**: Alpha/beta versions with newest features  
+- **Nightly builds**: Daily builds from main branch (development)
+
+### Package Managers
+
+Coming soon: Homebrew, Chocolatey, and Linux package repositories.
 
 ### Build from Source
+
+**Prerequisites:**
+- CMake 3.20+
+- LLVM 17+
+- C++20 compatible compiler (Clang 14+, GCC 11+, MSVC 2022+)
+- Ninja (recommended) or Make
+
+**Build steps:**
 ```bash
+git clone https://github.com/chrischtel/loom.git
+cd loom
 mkdir build && cd build
-cmake ..
+cmake .. -G Ninja
 ninja
 ```
+
+**Install:**
+```bash
+ninja install  # or: cmake --install .
+```
+
+## Building and Usage
 
 ### Compile Loom Programs
 ```bash
 # Compile a program
-./bin/loom build example.loom
+loom build example.loom
 
 # Run with debugging info
-./bin/loom build --verbose example.loom
+loom build --verbose example.loom
 
 # Check syntax without compiling  
-./bin/loom check example.loom
+loom check example.loom
+
+# Get help
+loom help
+
+# Show version information
+loom version
 ```
 
 ## Development Status

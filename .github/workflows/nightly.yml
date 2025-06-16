@@ -1,0 +1,199 @@
+name: Nightly
+
+on:
+  schedule:
+    # Run every day at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Debug
+
+jobs:
+  nightly-build:
+    name: Nightly ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {
+              name: "Windows",
+              os: windows-latest,
+              cc: "clang-cl",
+              cxx: "clang-cl",
+              cmake_generator: "Ninja",
+              artifact_name: "loom-nightly-windows-x64",
+              executable_name: "loom.exe"
+            }
+          - {
+              name: "Linux",
+              os: ubuntu-latest,
+              cc: "clang-14",
+              cxx: "clang++-14",
+              cmake_generator: "Ninja",
+              artifact_name: "loom-nightly-linux-x64",
+              executable_name: "loom"
+            }
+          - {
+              name: "macOS",
+              os: macos-latest,
+              cc: "clang",
+              cxx: "clang++",
+              cmake_generator: "Ninja",
+              artifact_name: "loom-nightly-macos-arm64",
+              executable_name: "loom"
+            }
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup LLVM (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 17
+        sudo apt-get update
+        sudo apt-get install -y llvm-17-dev libllvm17 llvm-17-tools
+        echo "LLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm" >> $GITHUB_ENV
+
+    - name: Setup LLVM (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install llvm@17
+        echo "LLVM_DIR=$(brew --prefix llvm@17)/lib/cmake/llvm" >> $GITHUB_ENV
+        echo "$(brew --prefix llvm@17)/bin" >> $GITHUB_PATH
+
+    - name: Setup LLVM (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm --version=17.0.6
+        echo "LLVM_DIR=C:\Program Files\LLVM\lib\cmake\llvm" >> $env:GITHUB_ENV
+
+    - name: Install Ninja
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          sudo apt-get install -y ninja-build
+        elif [ "$RUNNER_OS" == "macOS" ]; then
+          brew install ninja
+        elif [ "$RUNNER_OS" == "Windows" ]; then
+          choco install ninja
+        fi
+      shell: bash
+
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -G "${{ matrix.config.cmake_generator }}" \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
+          -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }}
+
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+    - name: Test Basic Functionality
+      run: |
+        # Test version command
+        ./build/bin/loom version || ./build/bin/loom.exe version
+        
+        # Test help command
+        ./build/bin/loom help || ./build/bin/loom.exe help
+      shell: bash
+
+    - name: Package Nightly
+      run: |
+        mkdir -p nightly
+        
+        # Copy binary
+        if [ -f "./build/bin/${{ matrix.config.executable_name }}" ]; then
+          cp ./build/bin/${{ matrix.config.executable_name }} nightly/
+        fi
+        
+        # Copy docs
+        cp README.md nightly/ || true
+        cp CHANGELOG.md nightly/ || true
+        
+        # Create timestamp file
+        echo "Nightly build from $(date -u)" > nightly/BUILD_INFO.txt
+        echo "Commit: ${{ github.sha }}" >> nightly/BUILD_INFO.txt
+        echo "Branch: ${{ github.ref_name }}" >> nightly/BUILD_INFO.txt
+        
+        # Create archive
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          cd nightly && 7z a ../${{ matrix.config.artifact_name }}.zip .
+        else
+          tar -czf ${{ matrix.config.artifact_name }}.tar.gz -C nightly .
+        fi
+      shell: bash
+
+    - name: Upload Nightly Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact_name }}
+        path: |
+          ${{ matrix.config.artifact_name }}.tar.gz
+          ${{ matrix.config.artifact_name }}.zip
+        retention-days: 7
+
+  create-nightly-release:
+    name: Create Nightly Release
+    needs: nightly-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare Nightly Assets
+      run: |
+        mkdir -p nightly-assets
+        find artifacts -name "*.tar.gz" -o -name "*.zip" | while read file; do
+          cp "$file" nightly-assets/
+        done
+
+    - name: Delete Previous Nightly Release
+      run: |
+        # Delete the previous nightly release and tag
+        gh release delete nightly --yes || true
+        git push --delete origin nightly || true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create Nightly Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: nightly
+        name: "Nightly Build"
+        body: |
+          ## Loom Nightly Build
+          
+          Automated nightly build from the latest commit on the main branch.
+          
+          **Warning**: These are development builds and may be unstable.
+          
+          **Commit**: ${{ github.sha }}
+          **Date**: ${{ github.run_id }}
+          
+          ### Download
+          
+          - **Windows**: `loom-nightly-windows-x64.zip`
+          - **Linux**: `loom-nightly-linux-x64.tar.gz`
+          - **macOS**: `loom-nightly-macos-arm64.tar.gz`
+          
+          These builds are automatically deleted and recreated daily.
+        prerelease: true
+        files: |
+          nightly-assets/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
