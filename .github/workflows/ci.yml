@@ -2,161 +2,86 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master, dev, ci_testing, experiments ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master, dev ]
   workflow_dispatch:
 
-env:
-  BUILD_TYPE: Release
-
 jobs:
-  test:
-    name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
+  # =====================================================
+  #  Call the reusable workflow for each configuration
+  # =====================================================
+  windows-msvc:
+    uses: ./.github/workflows/reusable-build.yml
     strategy:
       fail-fast: false
       matrix:
-        config:
-          # Windows builds
-          - {
-              name: "Windows MSVC",
-              os: windows-latest,
-              cmake_generator: "Visual Studio 17 2022",
-              cmake_args: "-A x64"
-            }
-          - {
-              name: "Windows Clang",
-              os: windows-latest,
-              cc: "clang-cl",
-              cxx: "clang-cl",
-              cmake_generator: "Ninja"
-            }
-          # Linux builds
-          - {
-              name: "Ubuntu GCC",
-              os: ubuntu-latest,
-              cc: "gcc",
-              cxx: "g++",
-              cmake_generator: "Ninja"
-            }
-          - {
-              name: "Ubuntu Clang",
-              os: ubuntu-latest,
-              cc: "clang",
-              cxx: "clang++",
-              cmake_generator: "Ninja"
-            }
-          # macOS builds
-          - {
-              name: "macOS Clang",
-              os: macos-latest,
-              cc: "clang",
-              cxx: "clang++",
-              cmake_generator: "Ninja"
-            }
-          - {
-              name: "macOS Apple Clang (Intel)",
-              os: macos-13, # Use an older runner for Intel architecture
-              cc: "clang",
-              cxx: "clang++",
-              cmake_generator: "Ninja",
-              cmake_args: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
-            }
+        build_type: [ Release, Debug ]
+    with:
+      os: windows-latest
+      build_type: ${{ matrix.build_type }}
+      cmake_generator: "Visual Studio 17 2022"
+      cmake_args: "-A x64"
+      artifact_name: c3-windows-${{ matrix.build_type }}
 
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+  linux-clang:
+    uses: ./.github/workflows/reusable-build.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [ Release, Debug ]
+    with:
+      os: ubuntu-22.04
+      build_type: ${{ matrix.build_type }}
+      cc: clang
+      cxx: clang++
+      cmake_generator: "Ninja"
+      artifact_name: c3-linux-${{ matrix.build_type }}
 
-    - name: Install Latest LLVM
-      uses: KyleMayes/install-llvm-action@v1
-      with:
-        version: '20.0.0' # Installs the latest stable version of LLVM
+  macos-clang:
+    uses: ./.github/workflows/reusable-build.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [ Release, Debug ]
+    with:
+      os: macos-13 # Use a specific version for stability
+      build_type: ${{ matrix.build_type }}
+      cc: clang
+      cxx: clang++
+      cmake_generator: "Ninja"
+      artifact_name: c3-macos-${{ matrix.build_type }}
 
-    - name: Configure CMake
-      run: |
-        cmake -B build `
-          -G "${{ matrix.config.cmake_generator }}" `
-          ${{ matrix.config.cmake_args }} `
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-      shell: pwsh # Use PowerShell for cross-platform consistency
-      env:
-        # Set compilers only for the specific jobs that need them
-        CC: ${{ matrix.config.cc }}
-        CXX: ${{ matrix.config.cxx }}
-
-    - name: Build
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
-
-    - name: Test Basic Functionality
-      run: |
-        # Use a variable for the executable path to simplify commands
-        if ($isWindows) {
-          $exe = "./build/bin/Release/loom.exe"
-        } else {
-          $exe = "./build/bin/loom"
-        }
-        & $exe version
-        & $exe help
-        & $exe info
-      shell: pwsh
-
-    - name: Test Sample Programs
-      run: |
-        if ($isWindows) {
-          $exe = "./build/bin/Release/loom.exe"
-        } else {
-          $exe = "./build/bin/loom"
-        }
-        echo 'func main() i32 { return 0; }' > test_basic.loom
-        & $exe check test_basic.loom
-        & $exe compile test_basic.loom
-      shell: pwsh
-
-    - name: Upload Build Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: loom-${{ matrix.config.name }}-${{ github.sha }}
-        path: |
-          build/bin/loom*
-          build/bin/Release/loom*
-          !build/**/*.pdb
-        retention-days: 7
-
-  lint:
-    name: Code Quality
+  # =====================================================
+  #  Release Job - Gathers artifacts from other jobs
+  # =====================================================
+  release:
+    name: Create Pre-release
     runs-on: ubuntu-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Install latest clang-format
-      run: sudo apt-get update && sudo apt-get install -y clang-format
-
-    - name: Check formatting
-      run: |
-        find . -type f \( -name "*.cc" -o -name "*.hh" \) | xargs clang-format --dry-run --Werror
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
+    # This job depends on the successful completion of the main release builds
+    needs: [ windows-msvc, linux-clang, macos-clang ]
+    # Only run when pushing to the master branch
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     permissions:
-      actions: read
-      contents: read
-      security-events: write
+      contents: write # Required to create a release
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts # Download all artifacts into an 'artifacts' directory
 
-    - name: Run CodeQL Analysis
-      uses: github/codeql-action/init@v3
-      with:
-        languages: cpp
-        # Let CodeQL auto-detect the build process
-        queries: +security-and-quality
+      - name: List downloaded files
+        run: ls -R artifacts
 
-    - name: Autobuild for CodeQL
-      uses: github/codeql-action/autobuild@v3
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-prerelease
+          name: "Latest Development Build"
+          body: "Automated pre-release build. Contains the latest features and fixes from the master branch."
+          prerelease: true
+          # This will automatically delete the previous 'latest-prerelease' tag and release
+          make_latest: 'legacy'
+          # Use a wildcard to upload all downloaded artifact files (.zip and .tar.gz)
+          files: artifacts/**/*.*

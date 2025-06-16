@@ -1,0 +1,120 @@
+name: Reusable Build & Test
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      build_type:
+        required: true
+        type: string
+      cc:
+        required: false
+        type: string
+      cxx:
+        required: false
+        type: string
+      cmake_generator:
+        required: true
+        type: string
+      cmake_args:
+        required: false
+        type: string
+      artifact_name:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build on ${{ inputs.os }} (${{ inputs.build_type }})
+    runs-on: ${{ inputs.os }}
+
+    defaults:
+      run:
+        shell: pwsh # Use PowerShell for cross-platform consistency
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Latest LLVM and Dependencies
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: 'latest'
+
+      - name: Configure CMake
+        env:
+          CC: ${{ inputs.cc }}
+          CXX: ${{ inputs.cxx }}
+        run: |
+          cmake -B build `
+            -G "${{ inputs.cmake_generator }}" `
+            ${{ inputs.cmake_args }} `
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }}
+
+      - name: Build Project
+        run: cmake --build build --config ${{ inputs.build_type }} --parallel
+
+      - name: Set Executable Path
+        id: set_exe
+        run: |
+          if ($isWindows) {
+            $exePath = ".\build\${{ inputs.build_type }}\c3c.exe"
+          } else {
+            $exePath = "./build/c3c"
+          }
+          echo "path=$exePath" >> $env:GITHUB_OUTPUT
+
+      - name: Run Examples
+        run: |
+          $exe = "${{ steps.set_exe.outputs.path }}"
+          cd resources
+          & $exe compile-run examples/hello_world_many.c3
+          & $exe compile-run examples/time.c3
+          & $exe compile-run examples/fannkuch-redux.c3
+          & $exe compile-run examples/args.c3 -- foo -bar "baz baz"
+          cd ..
+
+      - name: Run Unit Tests
+        run: |
+          $exe = "${{ steps.set_exe.outputs.path }}"
+          cd test
+          & $exe compile-test unit -O1
+          cd ..
+
+      - name: Run Compiler Test Suite
+        run: |
+          $exe = "${{ steps.set_exe.outputs.path }}"
+          cd test
+          & $exe compile-run -O1 src/test_suite_runner.c3 -- $exe test_suite/ --no-terminal
+          cd ..
+
+      - name: Package Artifact
+        run: |
+          $exe = "${{ steps.set_exe.outputs.path }}"
+          # Create a staging directory
+          mkdir staging
+          # Copy main executable
+          Copy-Item -Path $exe -Destination ./staging
+          # Copy runtime library if it exists
+          if (Test-Path ($exe -replace ".exe$", "_rt.exe")) {
+            Copy-Item -Path ($exe -replace ".exe$", "_rt.exe") -Destination ./staging
+          }
+          # Copy library files
+          Copy-Item -Path ./lib -Destination ./staging -Recurse
+          # Copy documentation
+          Copy-Item -Path README.md, releasenotes.md -Destination ./staging
+          
+          # Archive based on OS
+          if ($isWindows) {
+            7z a "${{ inputs.artifact_name }}.zip" ./staging/*
+          } else {
+            tar czf "${{ inputs.artifact_name }}.tar.gz" -C staging .
+          }
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ inputs.artifact_name }}.* # Uploads .zip or .tar.gz
