@@ -1,0 +1,288 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-release:
+    name: Build ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {
+              name: "windows-x64",
+              os: windows-latest,
+              cc: "clang-cl",
+              cxx: "clang-cl",
+              cmake_generator: "Ninja",
+              cmake_args: "",
+              artifact_name: "loom-windows-x64",
+              executable_name: "loom.exe"
+            }
+          - {
+              name: "linux-x64",
+              os: ubuntu-latest,
+              cc: "clang-14",
+              cxx: "clang++-14",
+              cmake_generator: "Ninja",
+              cmake_args: "",
+              artifact_name: "loom-linux-x64",
+              executable_name: "loom"
+            }
+          - {
+              name: "macos-x64",
+              os: macos-13,
+              cc: "clang",
+              cxx: "clang++",
+              cmake_generator: "Ninja",
+              cmake_args: "-DCMAKE_OSX_ARCHITECTURES=x86_64",
+              artifact_name: "loom-macos-x64",
+              executable_name: "loom"
+            }
+          - {
+              name: "macos-arm64",
+              os: macos-latest,
+              cc: "clang",
+              cxx: "clang++",
+              cmake_generator: "Ninja",
+              cmake_args: "-DCMAKE_OSX_ARCHITECTURES=arm64",
+              artifact_name: "loom-macos-arm64",
+              executable_name: "loom"
+            }
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup LLVM (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 17
+        sudo apt-get update
+        sudo apt-get install -y llvm-17-dev libllvm17 llvm-17-tools
+        echo "LLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm" >> $GITHUB_ENV
+
+    - name: Setup LLVM (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install llvm@17
+        echo "LLVM_DIR=$(brew --prefix llvm@17)/lib/cmake/llvm" >> $GITHUB_ENV
+        echo "$(brew --prefix llvm@17)/bin" >> $GITHUB_PATH
+
+    - name: Setup LLVM (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm --version=17.0.6
+        echo "LLVM_DIR=C:\Program Files\LLVM\lib\cmake\llvm" >> $env:GITHUB_ENV
+
+    - name: Install Ninja
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          sudo apt-get install -y ninja-build
+        elif [ "$RUNNER_OS" == "macOS" ]; then
+          brew install ninja
+        elif [ "$RUNNER_OS" == "Windows" ]; then
+          choco install ninja
+        fi
+      shell: bash
+
+    - name: Configure CMake
+      run: |
+        cmake -B build \
+          -G "${{ matrix.config.cmake_generator }}" \
+          ${{ matrix.config.cmake_args }} \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_C_COMPILER=${{ matrix.config.cc }} \
+          -DCMAKE_CXX_COMPILER=${{ matrix.config.cxx }} \
+          -DCMAKE_INSTALL_PREFIX=install
+
+    - name: Build
+      run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+    - name: Install
+      run: cmake --install build --config ${{ env.BUILD_TYPE }}
+
+    - name: Test Binary
+      run: |
+        if [ -f "./install/bin/${{ matrix.config.executable_name }}" ]; then
+          ./install/bin/${{ matrix.config.executable_name }} version
+        elif [ -f "./build/bin/${{ matrix.config.executable_name }}" ]; then
+          ./build/bin/${{ matrix.config.executable_name }} version
+        fi
+      shell: bash
+
+    - name: Package Release
+      run: |
+        mkdir -p release
+        
+        # Copy binary
+        if [ -f "./install/bin/${{ matrix.config.executable_name }}" ]; then
+          cp ./install/bin/${{ matrix.config.executable_name }} release/
+        elif [ -f "./build/bin/${{ matrix.config.executable_name }}" ]; then
+          cp ./build/bin/${{ matrix.config.executable_name }} release/
+        fi
+        
+        # Copy documentation
+        cp README.md release/ || true
+        cp LICENSE-MIT release/ || true
+        cp LICENSE-APACHE release/ || true
+        cp CHANGELOG.md release/ || true
+        
+        # Create archive
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          cd release && 7z a ../${{ matrix.config.artifact_name }}.zip .
+        else
+          tar -czf ${{ matrix.config.artifact_name }}.tar.gz -C release .
+        fi
+      shell: bash
+
+    - name: Upload Release Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config.artifact_name }}
+        path: |
+          ${{ matrix.config.artifact_name }}.tar.gz
+          ${{ matrix.config.artifact_name }}.zip
+        retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare Release Assets
+      run: |
+        mkdir -p release-assets
+        find artifacts -name "*.tar.gz" -o -name "*.zip" | while read file; do
+          cp "$file" release-assets/
+        done
+        ls -la release-assets/
+
+    - name: Extract Release Notes
+      id: release-notes
+      run: |
+        # Extract the latest version's changelog
+        if [ -f CHANGELOG.md ]; then
+          # Get the tag name
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            TAG_NAME="${{ github.event.inputs.tag }}"
+          else
+            TAG_NAME="${{ github.ref_name }}"
+          fi
+          
+          # Extract version number from tag (remove 'v' prefix)
+          VERSION=${TAG_NAME#v}
+          
+          # Try to extract changelog for this version
+          awk "/^## \[${VERSION}\]/ { flag=1; next } /^## \[/ && flag { exit } flag" CHANGELOG.md > release_notes.md
+          
+          # If no specific version found, use the latest entry
+          if [ ! -s release_notes.md ]; then
+            awk '/^## \[/ { if (flag) exit; flag=1; next } flag && /^## \[/ { exit } flag' CHANGELOG.md > release_notes.md
+          fi
+          
+          # If still empty, create a generic note
+          if [ ! -s release_notes.md ]; then
+            echo "Release ${TAG_NAME} of the Loom Programming Language Compiler." > release_notes.md
+            echo "" >> release_notes.md
+            echo "See the [CHANGELOG](CHANGELOG.md) for detailed changes." >> release_notes.md
+          fi
+        else
+          echo "Release ${TAG_NAME} of the Loom Programming Language Compiler." > release_notes.md
+        fi
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+        name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+        body_path: release_notes.md
+        prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+        files: |
+          release-assets/*
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-stable:
+    name: Update Stable Release
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || github.event.inputs.prerelease == 'true'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare Stable Release Assets
+      run: |
+        mkdir -p stable-assets
+        find artifacts -name "*.tar.gz" -o -name "*.zip" | while read file; do
+          cp "$file" stable-assets/
+        done
+
+    - name: Create/Update Stable Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: stable
+        name: "Loom Stable (Latest Pre-release)"
+        body: |
+          This is an automatically updated stable release that always points to the latest pre-release version.
+          
+          **Current Version:** ${{ github.ref_name }}
+          
+          This release is updated whenever a new pre-release (alpha, beta, or rc) is published.
+          For the actual stable releases, see the individual version tags.
+          
+          ## Download
+          
+          Choose the appropriate binary for your platform:
+          - **Windows**: `loom-windows-x64.zip`
+          - **Linux**: `loom-linux-x64.tar.gz`
+          - **macOS Intel**: `loom-macos-x64.tar.gz`
+          - **macOS Apple Silicon**: `loom-macos-arm64.tar.gz`
+        prerelease: false
+        files: |
+          stable-assets/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
