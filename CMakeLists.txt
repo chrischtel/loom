@@ -1,10 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # Set vcpkg toolchain file if not already set
-if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    set(CMAKE_TOOLCHAIN_FILE "C:/Users/chris/vcpkg/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "Vcpkg toolchain file")
-endif()
+
 
 # Force Clang compiler (must be set before project())
 if(WIN32)
