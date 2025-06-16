@@ -22,7 +22,7 @@ jobs:
       build_type: ${{ matrix.build_type }}
       cmake_generator: "Visual Studio 17 2022"
       cmake_args: "-A x64"
-      artifact_name: c3-windows-${{ matrix.build_type }}
+      artifact_name: loom-windows-${{ matrix.build_type }}
 
   linux-clang:
     uses: ./.github/workflows/reusable-build.yml
@@ -36,7 +36,7 @@ jobs:
       cc: clang
       cxx: clang++
       cmake_generator: "Ninja"
-      artifact_name: c3-linux-${{ matrix.build_type }}
+      artifact_name: loom-linux-${{ matrix.build_type }}
 
   macos-clang:
     uses: ./.github/workflows/reusable-build.yml
@@ -50,7 +50,7 @@ jobs:
       cc: clang
       cxx: clang++
       cmake_generator: "Ninja"
-      artifact_name: c3-macos-${{ matrix.build_type }}
+      artifact_name: loom-macos-${{ matrix.build_type }}
 
   # =====================================================
   #  Release Job - Gathers artifacts from other jobs
