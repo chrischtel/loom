@@ -6,6 +6,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "common/version.hh"
+
 namespace loom {
 
 CommandLineInterface::CommandLineInterface() { addGlobalFlags(); }
@@ -420,7 +422,7 @@ void CommandLineInterface::showHelp() const {
 
 void CommandLineInterface::showVersion() const {
   std::cout << "Loom Programming Language Compiler\n";
-  std::cout << "Version: 0.1.0-alpha\n";
+  std::cout << "Version: " << version::VERSION << "\n";
   std::cout << "Built with LLVM support\n";
   std::cout << "Target: ";
 

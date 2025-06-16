@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "../codegen/codegen.hh"
+#include "../common/version.hh"
 #include "../parser/ast_printer.hh"
 #include "../parser/parser_internal.hh"
 #include "../scanner/scanner_internal.hh"
@@ -360,7 +361,7 @@ int CleanCommand::execute(const CompilerOptions& options) {
 int InfoCommand::execute(const CompilerOptions& options) {
   std::cout << "Loom Compiler Information" << std::endl;
   std::cout << "=========================" << std::endl;
-  std::cout << "Version: 0.1.0-alpha" << std::endl;
+  std::cout << "Version: " << version::VERSION << std::endl;
   std::cout << "Built with: LLVM" << std::endl;
 
   std::cout << "Host platform: ";
@@ -463,6 +464,12 @@ int NewCommand::execute(const CompilerOptions& /*options*/) {
   return 1;
 }
 
+// Version Command Implementation
+int VersionCommand::execute(const CompilerOptions& /*options*/) {
+  version::printVersionInfo();
+  return 0;
+}
+
 // Factory function
 std::vector<std::unique_ptr<Command>> createStandardCommands() {
   std::vector<std::unique_ptr<Command>> commands;
@@ -475,6 +482,7 @@ std::vector<std::unique_ptr<Command>> createStandardCommands() {
   commands.emplace_back(std::make_unique<FormatCommand>());
   commands.emplace_back(std::make_unique<TestCommand>());
   commands.emplace_back(std::make_unique<NewCommand>());
+  commands.emplace_back(std::make_unique<VersionCommand>());
 
   return commands;
 }

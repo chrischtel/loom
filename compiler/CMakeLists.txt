@@ -1,5 +1,37 @@
 # Loom Compiler CMakeLists.txt
 
+# Version configuration
+set(LOOM_VERSION "0.1.0-alpha.3")
+
+# Get git information
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        OUTPUT_VARIABLE LOOM_GIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+else()
+    set(LOOM_GIT_HASH "unknown")
+endif()
+
+# Get build date and time
+string(TIMESTAMP LOOM_BUILD_DATE "%Y-%m-%d")
+string(TIMESTAMP LOOM_BUILD_TIME "%H:%M:%S")
+
+message(STATUS "Loom version: ${LOOM_VERSION}")
+message(STATUS "Git hash: ${LOOM_GIT_HASH}")
+message(STATUS "Build date: ${LOOM_BUILD_DATE} ${LOOM_BUILD_TIME}")
+
+# Configure version file
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/common/version.cc.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/common/version.cc"
+    @ONLY
+)
+
 # Collect all source files
 file(GLOB_RECURSE COMPILER_SOURCES CONFIGURE_DEPENDS
     "*.cpp"
@@ -29,6 +61,9 @@ endforeach()
 
 # Create compiler library if we have non-main sources
 if(LIB_SOURCES)
+    # Add the generated version.cc file to the library sources
+    list(APPEND LIB_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/common/version.cc")
+    
     add_library(loom_compiler_lib ${LIB_SOURCES} ${COMPILER_HEADERS})
     
     # Set target properties
@@ -41,6 +76,7 @@ if(LIB_SOURCES)
     # Include directories
     target_include_directories(loom_compiler_lib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}  # For generated files
     )
     
     # Link dependencies

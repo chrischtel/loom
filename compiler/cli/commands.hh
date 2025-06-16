@@ -104,6 +104,17 @@ class NewCommand : public Command {
   int execute(const CompilerOptions& options) override;
 };
 
+// Version command - display version information
+class VersionCommand : public Command {
+ public:
+  std::string getName() const override { return "version"; }
+  std::string getDescription() const override {
+    return "Display Loom compiler version information";
+  }
+  std::string getUsage() const override { return "loom version"; }
+  int execute(const CompilerOptions& options) override;
+};
+
 // Factory function to create all standard commands
 std::vector<std::unique_ptr<Command>> createStandardCommands();
 

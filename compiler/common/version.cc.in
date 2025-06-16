@@ -1,0 +1,48 @@
+#include "common/version.hh"
+#include <sstream>
+#include <iostream>
+
+namespace loom {
+namespace version {
+
+// These will be populated by CMake configure_file
+const char* const VERSION = "@LOOM_VERSION@";
+const char* const GIT_HASH = "@LOOM_GIT_HASH@";
+const char* const BUILD_DATE = "@LOOM_BUILD_DATE@";
+const char* const BUILD_TIME = "@LOOM_BUILD_TIME@";
+const char* const COMPILER_VERSION = "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@";
+const bool IS_DEBUG_BUILD = 
+#ifdef NDEBUG
+    false;
+#else
+    true;
+#endif
+
+std::string getFullVersionString() {
+    std::ostringstream oss;
+    oss << "Loom " << VERSION;
+    if (std::string(GIT_HASH) != "unknown") {
+        oss << " (git: " << GIT_HASH << ")";
+    }
+    return oss.str();
+}
+
+std::string getBuildInfo() {
+    std::ostringstream oss;
+    oss << "Built on " << BUILD_DATE << " at " << BUILD_TIME;
+    oss << " with " << COMPILER_VERSION;
+    if (IS_DEBUG_BUILD) {
+        oss << " (Debug)";
+    } else {
+        oss << " (Release)";
+    }
+    return oss.str();
+}
+
+void printVersionInfo() {
+    std::cout << getFullVersionString() << std::endl;
+    std::cout << getBuildInfo() << std::endl;
+}
+
+} // namespace version
+} // namespace loom
