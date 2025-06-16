@@ -41,7 +41,7 @@ jobs:
       - name: Install Latest LLVM and Dependencies
         uses: KyleMayes/install-llvm-action@v2
         with:
-          version: 'latest'
+          version: '19'
 
       - name: Configure CMake
         env:
