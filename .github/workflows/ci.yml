@@ -71,7 +71,7 @@ jobs:
     - name: Install Latest LLVM
       uses: KyleMayes/install-llvm-action@v1
       with:
-        version: 'latest' # Installs the latest stable version of LLVM
+        version: '20.0.0' # Installs the latest stable version of LLVM
 
     - name: Configure CMake
       run: |
