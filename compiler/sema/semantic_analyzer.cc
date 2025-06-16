@@ -545,8 +545,6 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(
       std::unique_ptr<TypeNode> arg_type = node.arguments[0]->accept(*this);
       // print can accept any type, so we don't need to check it
     }
-
-    // print function returns void (no return value)
     return nullptr;
   }
 
@@ -754,6 +752,24 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(BuiltinCallExpr& node) {
       return nullptr;
     }
     return std::make_unique<IntegerTypeNode>(node.location, 32, false);  // u32
+  } else if (node.builtin_name == "strlen") {
+    // $$strlen(str) -> string length
+    if (node.arguments.size() != 1) {
+      error(node.location, "$$strlen expects exactly 1 argument, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<IntegerTypeNode>(node.location, 32, true);  // i32
+  } else if (node.builtin_name == "strcat") {
+    // $$strcat(dest, src) -> concatenated string pointer
+    if (node.arguments.size() != 2) {
+      error(node.location, "$$strcat expects exactly 2 arguments, got " +
+                               std::to_string(node.arguments.size()));
+      return nullptr;
+    }
+    return std::make_unique<RawPointerTypeNode>(
+        node.location,
+        std::make_unique<IntegerTypeNode>(node.location, 8, true));  // *i8
   } else {
     error(node.location, "Unknown builtin function: $$" + node.builtin_name);
     return nullptr;

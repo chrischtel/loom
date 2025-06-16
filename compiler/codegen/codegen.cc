@@ -1537,19 +1537,41 @@ llvm::Value* CodeGen::codegen(VarDeclNode& node) {
               << " declared without initializer" << std::endl;
   }
   // 5. Store in both the old system (for compatibility) and new unified symbol
-  // table
+  // // table
   named_values[node.name] = alloca;
   variable_types[node.name] = varType;
 
-  // Also update the unified symbol table
-  if (symbol_table->updateVariableLLVM(node.name, alloca, varType)) {
-    std::cout << "[CodeGen] Variable " << node.name
-              << " LLVM info updated in unified symbol table" << std::endl;
-  } else {
-    std::cout << "[CodeGen] WARNING: Could not update LLVM info for variable: "
+  // Add variable to unified symbol table in current scope
+  if (symbol_table) {
+    // Get the variable's type from the node
+    std::shared_ptr<TypeNode> var_type_node = nullptr;
+    if (node.type) {
+      // Clone the type node for the symbol table
+      var_type_node = cloneTypeNode(node.type.get());
+    }
+
+    if (var_type_node) {
+      if (symbol_table->defineVariable(node.name, node.kind, var_type_node)) {
+        // Now update with LLVM info
+        if (symbol_table->updateVariableLLVM(node.name, alloca, varType)) {
+          std::cout << "[CodeGen] Variable " << node.name
+                    << " added and updated in unified symbol table"
+                    << std::endl;
+        }
+      } else {
+        // Variable already exists, just update LLVM info
+        if (symbol_table->updateVariableLLVM(node.name, alloca, varType)) {
+          std::cout << "[CodeGen] Variable " << node.name
+                    << " LLVM info updated in unified symbol table"
+
+                    << std::endl;
+        } else {
+          std::cout
+              << "[CodeGen] WARNING: Could not update LLVM info for variable: "
               << node.name << std::endl;
-    // This might happen if the variable wasn't declared in semantic analysis
-    // For now, we can continue using the old system
+        }
+      }
+    }
   }
 
   std::cout << "[CodeGen] Variable " << node.name << " added to symbol table"
@@ -1596,7 +1618,7 @@ llvm::Value* CodeGen::codegen(Identifier& node) {
 
 llvm::Value* CodeGen::codegen(BinaryExpr& node) {
   std::cout << "[CodeGen] Generating BinaryExpr" << std::endl;
-  // 1. Rekursiv den Code für die linke und rechte Seite generieren.
+  // 1. Recursively generate code for left and right operands
   llvm::Value* L = codegen(*node.left);
   llvm::Value* R = codegen(*node.right);
 
@@ -1604,15 +1626,20 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
     return nullptr;
   }
 
-  // 2. Type promotion: if one operand is float, promote both to float
-  if (L->getType()->isFloatingPointTy() || R->getType()->isFloatingPointTy()) {
+  // 2. Handle type promotion and casting
+  llvm::Type* LType = L->getType();
+  llvm::Type* RType = R->getType();
+
+  // If one operand is float, promote both to float
+  if (LType->isFloatingPointTy() || RType->isFloatingPointTy()) {
     // Promote both to floating point
-    if (L->getType()->isIntegerTy()) {
+    if (LType->isIntegerTy()) {
       L = builder->CreateSIToFP(L, builder->getDoubleTy(), "int2fp");
     }
-    if (R->getType()->isIntegerTy()) {
+    if (RType->isIntegerTy()) {
       R = builder->CreateSIToFP(R, builder->getDoubleTy(), "int2fp");
-    }  // Generate floating point operations
+    }
+    // Generate floating point operations
     switch (node.op.type) {
       case TokenType::TOKEN_PLUS:
         return builder->CreateFAdd(L, R, "fadd.tmp");
@@ -1627,7 +1654,6 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
       case TokenType::TOKEN_LESS:
         return builder->CreateFCmpOLT(L, R, "fcmp.tmp");
       case TokenType::TOKEN_LESS_EQUAL:
-
         return builder->CreateFCmpOLE(L, R, "fcmp.tmp");
       case TokenType::TOKEN_GREATER:
         return builder->CreateFCmpOGT(L, R, "fcmp.tmp");
@@ -1636,7 +1662,25 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
       default:
         throw std::runtime_error("CodeGen: Unknown binary operator for float.");
     }
-  } else {  // Both operands are integers - generate integer operations
+  } else if (LType->isIntegerTy() && RType->isIntegerTy()) {
+    // Both operands are integers - handle different bit widths
+    unsigned LBits = LType->getIntegerBitWidth();
+    unsigned RBits = RType->getIntegerBitWidth();
+
+    // Promote to the larger bit width
+    if (LBits != RBits) {
+      unsigned targetBits = std::max(LBits, RBits);
+      llvm::Type* targetType = builder->getIntNTy(targetBits);
+
+      if (LBits < targetBits) {
+        L = builder->CreateSExt(L, targetType, "sext.L");
+      }
+      if (RBits < targetBits) {
+        R = builder->CreateSExt(R, targetType, "sext.R");
+      }
+    }
+
+    // Generate integer operations
     switch (node.op.type) {
       case TokenType::TOKEN_PLUS:
         return builder->CreateAdd(L, R, "add.tmp");
@@ -1646,7 +1690,7 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
         return builder->CreateMul(L, R, "mul.tmp");
       case TokenType::TOKEN_SLASH:
         return builder->CreateSDiv(L, R,
-                                   "div.tmp");  // SDiv für Signed Integers
+                                   "div.tmp");  // SDiv for signed integers
       case TokenType::TOKEN_EQUAL_EQUAL:
         return builder->CreateICmpEQ(L, R, "icmp.tmp");
       case TokenType::TOKEN_LESS:
@@ -1663,8 +1707,7 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
         return builder->CreateAnd(L, R, "and.tmp");
       case TokenType::TOKEN_BITWISE_OR:
         return builder->CreateOr(L, R, "or.tmp");
-      case TokenType::TOKEN_HAT:  // XOR operation (when used in expression
-                                  // context)
+      case TokenType::TOKEN_HAT:  // XOR operation
         return builder->CreateXor(L, R, "xor.tmp");
       case TokenType::TOKEN_LEFT_SHIFT:
         return builder->CreateShl(L, R, "shl.tmp");
@@ -1676,6 +1719,9 @@ llvm::Value* CodeGen::codegen(BinaryExpr& node) {
         throw std::runtime_error(
             "CodeGen: Unknown binary operator for integer.");
     }
+  } else {
+    throw std::runtime_error(
+        "CodeGen: Unsupported operand types for binary operation.");
   }
 }
 
@@ -2126,12 +2172,87 @@ llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
         throw std::runtime_error("$$WSACleanup expects no arguments");
       }
       return syscallFramework->generateNetworkSyscall("WSACleanup", args);
-
     } else if (node.builtin_name == "htons") {
       if (args.size() != 1) {
         throw std::runtime_error("$$htons expects exactly 1 argument");
       }
       return syscallFramework->generateNetworkSyscall("htons", args);
+
+    } else if (node.builtin_name == "strlen") {
+      if (args.size() != 1) {
+        throw std::runtime_error("$$strlen expects exactly 1 argument");
+      }
+      // String length calculation for C-style null-terminated strings
+      // Implementation: Loop through memory until null terminator
+      llvm::Value* strPtr = args[0];
+
+      // Convert to i8* if needed
+      if (!strPtr->getType()->isPointerTy()) {
+        throw std::runtime_error("$$strlen expects a string pointer argument");
+      }
+
+      // Create a basic block for the loop
+      llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+      llvm::BasicBlock* loop_block =
+          llvm::BasicBlock::Create(*context, "strlen.loop", current_function);
+      llvm::BasicBlock* end_block =
+          llvm::BasicBlock::Create(*context, "strlen.end", current_function);
+
+      // Initialize counter
+      llvm::Value* counter =
+          builder->CreateAlloca(builder->getInt32Ty(), nullptr, "counter");
+      builder->CreateStore(builder->getInt32(0), counter);
+
+      // Initialize current pointer
+      llvm::Value* currentPtr =
+          builder->CreateAlloca(strPtr->getType(), nullptr, "currentPtr");
+      builder->CreateStore(strPtr, currentPtr);
+
+      // Jump to loop
+      builder->CreateBr(loop_block);
+
+      // Loop block: check if current character is null
+      builder->SetInsertPoint(loop_block);
+      llvm::Value* loadedPtr =
+          builder->CreateLoad(strPtr->getType(), currentPtr, "loadedPtr");
+      llvm::Value* currentChar =
+          builder->CreateLoad(builder->getInt8Ty(), loadedPtr, "currentChar");
+      llvm::Value* isNull =
+          builder->CreateICmpEQ(currentChar, builder->getInt8(0), "isNull");
+
+      // If null, exit loop; otherwise continue
+      llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(
+          *context, "strlen.continue", current_function);
+      builder->CreateCondBr(isNull, end_block, continue_block);
+
+      // Continue block: increment counter and pointer
+      builder->SetInsertPoint(continue_block);
+      llvm::Value* currentCount =
+          builder->CreateLoad(builder->getInt32Ty(), counter, "currentCount");
+      llvm::Value* newCount =
+          builder->CreateAdd(currentCount, builder->getInt32(1), "newCount");
+      builder->CreateStore(newCount, counter);
+
+      llvm::Value* newPtr = builder->CreateGEP(builder->getInt8Ty(), loadedPtr,
+                                               builder->getInt32(1), "newPtr");
+      builder->CreateStore(newPtr, currentPtr);
+      builder->CreateBr(loop_block);
+
+      // End block: return the counter
+      builder->SetInsertPoint(end_block);
+      return builder->CreateLoad(builder->getInt32Ty(), counter,
+                                 "strlen.result");
+
+    } else if (node.builtin_name == "strcat") {
+      if (args.size() != 2) {
+        throw std::runtime_error("$$strcat expects exactly 2 arguments");
+      }
+      // String concatenation - for now, we'll implement a simple version
+      // that returns a new allocated string (this would need malloc in real
+      // implementation) For now, throw an error indicating it needs to be
+      // implemented
+      throw std::runtime_error(
+          "$$strcat not yet implemented - requires memory management");
 
     } else {
       throw std::runtime_error("Unknown builtin function: $$" +
@@ -2339,10 +2460,14 @@ llvm::Value* CodeGen::codegen(FunctionDeclNode& node) {
   // Save current insertion point and function context
   llvm::BasicBlock* prev_block = builder->GetInsertBlock();
   llvm::Function* prev_function = current_function;
-
   // Switch to function context
   builder->SetInsertPoint(entry_block);
   current_function = llvm_func;
+
+  // Enter function scope in symbol table
+  if (symbol_table) {
+    symbol_table->enterFunction(node.name);
+  }
 
   // Save previous named values (for nested scopes)
   auto prev_named_values = named_values;
@@ -2391,11 +2516,15 @@ llvm::Value* CodeGen::codegen(FunctionDeclNode& node) {
       }
     }
   }
-
   // 10. Restore previous context
   current_function = prev_function;
   named_values = prev_named_values;
   variable_types = prev_variable_types;
+
+  // Leave function scope in symbol table
+  if (symbol_table) {
+    symbol_table->leaveFunction();
+  }
 
   if (prev_block) {
     builder->SetInsertPoint(prev_block);
@@ -2623,7 +2752,6 @@ llvm::Value* CodeGen::codegen(MemberAccessExpr& node) {
   if (!var_info) {
     var_info = symbol_table->lookupVariable(object_name);
   }
-
   if (!var_info || !var_info->type) {
     throw std::runtime_error("Could not find type info for variable '" +
                              object_name + "'.");
@@ -2652,9 +2780,31 @@ llvm::Value* CodeGen::codegen(MemberAccessExpr& node) {
     }
   }
 
-  // Handle Struct Member Access
+  // Handle Struct Member Access - but also check if it's actually a union
   if (auto* struct_type_node =
           dynamic_cast<StructTypeNode*>(var_info->type.get())) {
+    // First check if this is actually a union (common parsing issue)
+    const UnionInfo* union_info =
+        symbol_table->lookupUnion(struct_type_node->struct_name);
+    if (union_info) {
+      // This is actually a union, handle it as such
+      for (const auto& field : union_info->fields) {
+        if (field.first == node.member_name) {
+          llvm::Type* field_llvm_type = typeToLLVMType(*field.second);
+          // Bitcast the pointer and then load the value, providing the explicit
+          // type.
+          llvm::Value* generic_field_ptr =
+              builder->CreateBitCast(object_ptr, builder->getPtrTy());
+          return builder->CreateLoad(field_llvm_type, generic_field_ptr,
+                                     node.member_name);
+        }
+      }
+      throw std::runtime_error("CodeGen: Union field '" + node.member_name +
+                               "' not found in union '" +
+                               struct_type_node->struct_name + "'.");
+    }
+
+    // Handle as regular struct
     int field_index =
         getFieldIndex(struct_type_node->struct_name, node.member_name);
     if (field_index != -1) {
@@ -3207,4 +3357,87 @@ llvm::Value* CodeGen::codegen(UnionLiteralExpr& node) {
 
   // Load and return the union value
   return builder->CreateLoad(union_type, union_storage, "union.val");
+}
+
+// Helper method to clone type nodes for symbol table
+std::shared_ptr<TypeNode> CodeGen::cloneTypeNode(TypeNode* type) const {
+  if (!type) return nullptr;
+
+  // Handle different type node kinds
+  if (auto* int_type = dynamic_cast<IntegerTypeNode*>(type)) {
+    return std::make_shared<IntegerTypeNode>(
+        int_type->location, int_type->bit_width, int_type->is_signed);
+  } else if (auto* float_type = dynamic_cast<FloatTypeNode*>(type)) {
+    return std::make_shared<FloatTypeNode>(float_type->location,
+                                           float_type->bit_width);
+  } else if (auto* bool_type = dynamic_cast<BooleanTypeNode*>(type)) {
+    return std::make_shared<BooleanTypeNode>(bool_type->location);
+  } else if (auto* string_type = dynamic_cast<StringTypeNode*>(type)) {
+    return std::make_shared<StringTypeNode>(string_type->location);
+  } else if (auto* struct_type = dynamic_cast<StructTypeNode*>(type)) {
+    return std::make_shared<StructTypeNode>(struct_type->location,
+                                            struct_type->struct_name);
+  } else if (auto* union_type = dynamic_cast<UnionTypeNode*>(type)) {
+    return std::make_shared<UnionTypeNode>(union_type->location,
+                                           union_type->union_name);
+  } else if (auto* slice_type = dynamic_cast<SliceTypeNode*>(type)) {
+    auto element_type_shared = cloneTypeNode(slice_type->element_type.get());
+    // Convert shared_ptr to unique_ptr for the constructor
+    std::unique_ptr<TypeNode> element_type_unique;
+    if (element_type_shared) {
+      element_type_unique = std::unique_ptr<TypeNode>(
+          cloneTypeNodeAsUnique(slice_type->element_type.get()));
+    }
+    return std::make_shared<SliceTypeNode>(slice_type->location,
+                                           std::move(element_type_unique));
+  } else if (auto* ptr_type = dynamic_cast<RawPointerTypeNode*>(type)) {
+    auto pointed_type_shared = cloneTypeNode(ptr_type->pointed_type.get());
+    // Convert shared_ptr to unique_ptr for the constructor
+    std::unique_ptr<TypeNode> pointed_type_unique;
+    if (pointed_type_shared) {
+      pointed_type_unique = std::unique_ptr<TypeNode>(
+          cloneTypeNodeAsUnique(ptr_type->pointed_type.get()));
+    }
+    return std::make_shared<RawPointerTypeNode>(ptr_type->location,
+                                                std::move(pointed_type_unique));
+  }
+
+  // Add more type cases as needed
+  return nullptr;
+}
+
+// Helper method to clone type nodes as unique_ptr (for constructors that need
+// unique_ptr)
+std::unique_ptr<TypeNode> CodeGen::cloneTypeNodeAsUnique(TypeNode* type) const {
+  if (!type) return nullptr;
+
+  // Handle different type node kinds
+  if (auto* int_type = dynamic_cast<IntegerTypeNode*>(type)) {
+    return std::make_unique<IntegerTypeNode>(
+        int_type->location, int_type->bit_width, int_type->is_signed);
+  } else if (auto* float_type = dynamic_cast<FloatTypeNode*>(type)) {
+    return std::make_unique<FloatTypeNode>(float_type->location,
+                                           float_type->bit_width);
+  } else if (auto* bool_type = dynamic_cast<BooleanTypeNode*>(type)) {
+    return std::make_unique<BooleanTypeNode>(bool_type->location);
+  } else if (auto* string_type = dynamic_cast<StringTypeNode*>(type)) {
+    return std::make_unique<StringTypeNode>(string_type->location);
+  } else if (auto* struct_type = dynamic_cast<StructTypeNode*>(type)) {
+    return std::make_unique<StructTypeNode>(struct_type->location,
+                                            struct_type->struct_name);
+  } else if (auto* union_type = dynamic_cast<UnionTypeNode*>(type)) {
+    return std::make_unique<UnionTypeNode>(union_type->location,
+                                           union_type->union_name);
+  } else if (auto* slice_type = dynamic_cast<SliceTypeNode*>(type)) {
+    auto element_type = cloneTypeNodeAsUnique(slice_type->element_type.get());
+    return std::make_unique<SliceTypeNode>(slice_type->location,
+                                           std::move(element_type));
+  } else if (auto* ptr_type = dynamic_cast<RawPointerTypeNode*>(type)) {
+    auto pointed_type = cloneTypeNodeAsUnique(ptr_type->pointed_type.get());
+    return std::make_unique<RawPointerTypeNode>(ptr_type->location,
+                                                std::move(pointed_type));
+  }
+
+  // Add more type cases as needed
+  return nullptr;
 }

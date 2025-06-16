@@ -157,4 +157,9 @@ class CodeGen {
   // Helper method to get field index from struct info
   int getFieldIndex(const std::string& struct_name,
                     const std::string& field_name) const;
+  // Helper method to clone type nodes for symbol table
+  std::shared_ptr<TypeNode> cloneTypeNode(TypeNode* type) const;
+
+  // Helper method to clone type nodes as unique_ptr
+  std::unique_ptr<TypeNode> cloneTypeNodeAsUnique(TypeNode* type) const;
 };
