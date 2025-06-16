@@ -1,6 +1,6 @@
 # Loom Language Changelog
 
-## [v0.1.0-alpha.3] - UNRELEASED - Phase 1 MVP: String Functions & Network Programming
+## [v0.1.0-alpha.3] - 16.06.2025
 ### Added
 - **String builtin functions**:
   - `$$strlen(str)` - Calculate string length automatically
@@ -38,6 +38,10 @@
 - Scanner recognizes array tokens and string functions
 - Parser builds AST nodes for arrays and builtin calls
 - Type casting system supports comprehensive type conversions
+
+
+### Fixed
+- Fixed symbol table lookups for nested scopes
 
 ### Examples
 ```loom
