@@ -128,16 +128,14 @@ std::unique_ptr<TypeNode> SemanticAnalyzer::visit(VarDeclNode& node) {
   } else if (initializer_type) {
     // *** HIER KOMMT DIE KORREKTUR ***
     // Ansonsten inferieren (schlussfolgern) wir den Typ vom Initializer
-    // UND LÖSEN IHN SOFORT IN EINEN KONKRETEN TYP AUF.
-
-    if (auto* lit =
+    // UND LÖSEN IHN SOFORT IN EINEN KONKRETEN TYP AUF.    if (auto* lit =
             dynamic_cast<IntegerLiteralTypeNode*>(initializer_type.get())) {
       // Standard-Inferenz: Ein Integer-Literal ohne Kontext wird zu i32.
       final_type = std::make_unique<IntegerTypeNode>(lit->location, 32, true);
-    } else if (auto* lit = dynamic_cast<FloatLiteralTypeNode*>(
+    } else if (auto* float_lit = dynamic_cast<FloatLiteralTypeNode*>(
                    initializer_type.get())) {
       // Standard-Inferenz: Ein Float-Literal ohne Kontext wird zu f64.
-      final_type = std::make_unique<FloatTypeNode>(lit->location, 64);
+      final_type = std::make_unique<FloatTypeNode>(float_lit->location, 64);
     } else {
       // Andere Typen (wie string) sind bereits konkret und können übernommen
       // werden.

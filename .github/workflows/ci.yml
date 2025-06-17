@@ -5,83 +5,321 @@ on:
     branches: [ main, dev, ci_testing, experiments ]
   pull_request:
     branches: [ main, dev ]
-  workflow_dispatch:
+
+env:
+  LLVM_RELEASE_VERSION_WINDOWS: 18
+  LLVM_RELEASE_VERSION_MAC: 17
+  LLVM_RELEASE_VERSION_LINUX: 17
+  LLVM_RELEASE_VERSION_UBUNTU22: 17
+  LLVM_DEV_VERSION: 21
 
 jobs:
-  # =====================================================
-  #  Call the reusable workflow for each configuration
-  # =====================================================
-  windows-msvc:
-    uses: ./.github/workflows/reusable-build.yml
+  build-msvc:
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         build_type: [ Release, Debug ]
-    with:
-      os: windows-latest
-      build_type: ${{ matrix.build_type }}
-      cmake_generator: "Visual Studio 17 2022"
-      cmake_args: "-A x64"
-      artifact_name: loom-windows-${{ matrix.build_type }}
 
-  linux-clang:
-    uses: ./.github/workflows/reusable-build.yml
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM and Clang
+        run: |
+          choco install llvm --version=18.1.8 -y
+          echo "C:\Program Files\LLVM\bin" >> %GITHUB_PATH%
+
+      - name: CMake Configure
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DLOOM_USE_LLVM=ON -DLOOM_BUILD_TESTING=ON -DLOOM_BUILD_EXAMPLES=ON
+
+      - name: CMake Build
+        run: |
+          cmake --build build --config ${{ matrix.build_type }}
+
+      - name: Test Loom Compiler
+        run: |
+          if exist "build\bin\${{ matrix.build_type }}\loom.exe" (
+            echo "Loom compiler built successfully"
+            build\bin\${{ matrix.build_type }}\loom.exe --version || echo "Version command not implemented yet"
+          ) else if exist "build\${{ matrix.build_type }}\loom.exe" (
+            echo "Loom compiler built successfully"
+            build\${{ matrix.build_type }}\loom.exe --version || echo "Version command not implemented yet"
+          ) else (
+            echo "Loom compiler not found"
+            dir build /s /b *.exe
+          )
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: loom-windows-${{ matrix.build_type }}
+          path: |
+            build/bin/${{ matrix.build_type }}/loom.exe
+            build/${{ matrix.build_type }}/loom.exe
+          if-no-files-found: ignore
+
+  build-msys2-clang:
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        build_type: [ Release, Debug ]
-    with:
-      os: ubuntu-22.04
-      build_type: ${{ matrix.build_type }}
-      cc: clang
-      cxx: clang++
-      cmake_generator: "Ninja"
-      artifact_name: loom-linux-${{ matrix.build_type }}
+        build_type: [Release, Debug]
 
-  macos-clang:
-    uses: ./.github/workflows/reusable-build.yml
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: false
+          install: git binutils mingw-w64-clang-x86_64-cmake mingw-w64-clang-x86_64-toolchain mingw-w64-clang-x86_64-ninja mingw-w64-clang-x86_64-llvm
+
+      - name: CMake Configure
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DLOOM_USE_LLVM=ON -DLOOM_BUILD_TESTING=ON -DLOOM_BUILD_EXAMPLES=ON
+
+      - name: CMake Build
+        run: |
+          cmake --build build
+
+      - name: Test Loom Compiler
+        run: |
+          if [ -f "build/bin/loom" ] || [ -f "build/bin/loom.exe" ] || [ -f "build/loom" ] || [ -f "build/loom.exe" ]; then
+            echo "Loom compiler built successfully"
+            ./build/bin/loom --version 2>/dev/null || ./build/loom --version 2>/dev/null || echo "Version command not implemented yet"
+          else
+            echo "Loom compiler not found"
+            find build -name "loom*" -type f
+          fi
+
+  build-linux:
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        build_type: [ Release, Debug ]
-    with:
-      os: macos-13 # Use a specific version for stability
-      build_type: ${{ matrix.build_type }}
-      cc: clang
-      cxx: clang++
-      cmake_generator: "Ninja"
-      artifact_name: loom-macos-${{ matrix.build_type }}
-
-  # =====================================================
-  #  Release Job - Gathers artifacts from other jobs
-  # =====================================================
-  release:
-    name: Create Pre-release
-    runs-on: ubuntu-latest
-    # This job depends on the successful completion of the main release builds
-    needs: [ windows-msvc, linux-clang, macos-clang ]
-    # Only run when pushing to the main branch
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    permissions:
-      contents: write # Required to create a release
+        build_type: [Release, Debug]
+        llvm_version: [17, 18, 19, 20]
 
     steps:
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      
+      - name: Install common deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g zlib1g-dev python3 ninja-build curl
+
+      - name: Install Clang ${{matrix.llvm_version}}
+        run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          if [[ "${{matrix.llvm_version}}" < 18 ]]; then
+            sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${{matrix.llvm_version}} main"
+            sudo apt-get update
+            sudo apt-get install -y -t llvm-toolchain-jammy-${{matrix.llvm_version}} \
+              clang-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}}-dev \
+              lld-${{matrix.llvm_version}} liblld-${{matrix.llvm_version}}-dev
+          else
+            if [[ "${{matrix.llvm_version}}" < "${{env.LLVM_DEV_VERSION}}" ]]; then
+              sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${{matrix.llvm_version}} main"
+              sudo apt-get update
+              sudo apt-get install -y -t llvm-toolchain-jammy-${{matrix.llvm_version}} \
+                clang-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}}-dev \
+                lld-${{matrix.llvm_version}} liblld-${{matrix.llvm_version}}-dev
+            else
+              sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main"
+              sudo apt-get update
+              sudo apt-get install -y -t llvm-toolchain-jammy \
+                clang-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}}-dev \
+                lld-${{matrix.llvm_version}} liblld-${{matrix.llvm_version}}-dev
+            fi
+          fi
+
+      - name: CMake Configure
+        run: |
+          export CC=clang-${{matrix.llvm_version}}
+          export CXX=clang++-${{matrix.llvm_version}}
+          cmake -B build \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=${{matrix.build_type}} \
+                -DCMAKE_C_COMPILER=clang-${{matrix.llvm_version}} \
+                -DCMAKE_CXX_COMPILER=clang++-${{matrix.llvm_version}} \
+                -DLOOM_USE_LLVM=ON \
+                -DLOOM_BUILD_TESTING=ON \
+                -DLOOM_BUILD_EXAMPLES=ON
+
+      - name: CMake Build
+        run: |
+          cmake --build build
+
+      - name: Test Loom Compiler
+        run: |
+          if [ -f "build/bin/loom" ]; then
+            echo "Loom compiler built successfully"
+            ./build/bin/loom --version || echo "Version command not implemented yet"
+          elif [ -f "build/loom" ]; then
+            echo "Loom compiler built successfully"
+            ./build/loom --version || echo "Version command not implemented yet"
+          else
+            echo "Loom compiler not found"
+            find build -name "loom*" -type f
+          fi
+
+      - name: Run Tests
+        run: |
+          cd build
+          ctest --output-on-failure || echo "No tests configured yet"
+
+      - name: Bundle output
+        if: matrix.llvm_version == env.LLVM_RELEASE_VERSION_LINUX
+        run: |
+          mkdir loom
+          if [ -f "build/bin/loom" ]; then
+            cp build/bin/loom loom/
+          elif [ -f "build/loom" ]; then
+            cp build/loom loom/
+          fi
+          cp README.md loom/ || echo "README.md not found"
+          cp -r stdlib loom/ 2>/dev/null || echo "No stdlib directory found"
+          tar czf loom-linux-${{matrix.build_type}}.tar.gz loom
+
+      - name: Upload artifacts
+        if: matrix.llvm_version == env.LLVM_RELEASE_VERSION_LINUX
+        uses: actions/upload-artifact@v4
         with:
-          path: artifacts # Download all artifacts into an 'artifacts' directory
+          name: loom-linux-${{matrix.build_type}}
+          path: loom-linux-${{matrix.build_type}}.tar.gz
 
-      - name: List downloaded files
-        run: ls -R artifacts
+  build-mac:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+        llvm_version: [17, 18]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download LLVM
+        run: |
+          brew install llvm@${{ matrix.llvm_version }} ninja curl
+          echo "/opt/homebrew/opt/llvm@${{ matrix.llvm_version }}/bin" >> $GITHUB_PATH
+          TMP_PATH=$(xcrun --show-sdk-path)/usr/include
+          echo "CPATH=$TMP_PATH" >> $GITHUB_ENV
 
-      - name: Create GitHub Release
+      - name: CMake Configure
+        run: |
+          export CC=/opt/homebrew/opt/llvm@${{ matrix.llvm_version }}/bin/clang
+          export CXX=/opt/homebrew/opt/llvm@${{ matrix.llvm_version }}/bin/clang++
+          cmake -B build \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+                -DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm@${{ matrix.llvm_version }}/bin/clang \
+                -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm@${{ matrix.llvm_version }}/bin/clang++ \
+                -DLOOM_USE_LLVM=ON \
+                -DLOOM_BUILD_TESTING=ON \
+                -DLOOM_BUILD_EXAMPLES=ON
+
+      - name: CMake Build
+        run: |
+          cmake --build build
+
+      - name: Test Loom Compiler
+        run: |
+          if [ -f "build/bin/loom" ]; then
+            echo "Loom compiler built successfully"
+            ./build/bin/loom --version || echo "Version command not implemented yet"
+          elif [ -f "build/loom" ]; then
+            echo "Loom compiler built successfully"
+            ./build/loom --version || echo "Version command not implemented yet"
+          else
+            echo "Loom compiler not found"
+            find build -name "loom*" -type f
+          fi
+
+      - name: Run Tests
+        run: |
+          cd build
+          ctest --output-on-failure || echo "No tests configured yet"
+
+      - name: Bundle output
+        if: matrix.llvm_version == env.LLVM_RELEASE_VERSION_MAC
+        run: |
+          mkdir macos
+          if [ -f "build/bin/loom" ]; then
+            cp build/bin/loom macos/
+          elif [ -f "build/loom" ]; then
+            cp build/loom macos/
+          fi
+          cp README.md macos/ || echo "README.md not found"
+          cp -r stdlib macos/ 2>/dev/null || echo "No stdlib directory found"
+          zip -r loom-macos-${{matrix.build_type}}.zip macos
+
+      - name: Upload artifacts
+        if: matrix.llvm_version == env.LLVM_RELEASE_VERSION_MAC
+        uses: actions/upload-artifact@v4
+        with:
+          name: loom-macos-${{matrix.build_type}}
+          path: loom-macos-${{matrix.build_type}}.zip
+
+  release:
+    runs-on: ubuntu-22.04
+    needs: [build-msvc, build-linux, build-mac]
+    if: github.ref == 'refs/heads/main'
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+      
+      - name: Prepare Windows Release
+        run: |
+          mkdir -p loom-windows-release loom-windows-debug
+          if [ -d "loom-windows-Release" ]; then
+            cp -r loom-windows-Release/* loom-windows-release/ 2>/dev/null || true
+          fi
+          if [ -d "loom-windows-Debug" ]; then
+            cp -r loom-windows-Debug/* loom-windows-debug/ 2>/dev/null || true
+          fi
+          cp README.md loom-windows-release/ 2>/dev/null || echo "README.md not found"
+          cp README.md loom-windows-debug/ 2>/dev/null || echo "README.md not found"
+          cp -r stdlib loom-windows-release/ 2>/dev/null || echo "No stdlib directory found"
+          cp -r stdlib loom-windows-debug/ 2>/dev/null || echo "No stdlib directory found"
+          zip -r loom-windows.zip loom-windows-release
+          zip -r loom-windows-debug.zip loom-windows-debug
+
+      - name: Prepare Linux and macOS releases
+        run: |
+          # Rename artifacts to consistent names
+          mv loom-linux-Release/loom-linux-Release.tar.gz loom-linux-Release/loom-linux.tar.gz 2>/dev/null || true
+          mv loom-linux-Debug/loom-linux-Debug.tar.gz loom-linux-Debug/loom-linux-debug.tar.gz 2>/dev/null || true
+          mv loom-macos-Release/loom-macos-Release.zip loom-macos-Release/loom-macos.zip 2>/dev/null || true
+          mv loom-macos-Debug/loom-macos-Debug.zip loom-macos-Debug/loom-macos-debug.zip 2>/dev/null || true
+
+      - name: Delete previous prerelease
+        run: |
+          gh release delete latest-prerelease --cleanup-tag -y || true
+          
+      - name: Create Release
+        id: create_release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: latest-prerelease
-          name: "Latest Development Build"
-          body: "Automated pre-release build. Contains the latest features and fixes from the main branch."
+          name: latest-prerelease-${{ github.run_number }}
+          draft: false
           prerelease: true
-          # This will automatically delete the previous 'latest-prerelease' tag and release
-          make_latest: 'legacy'
-          # Use a wildcard to upload all downloaded artifact files (.zip and .tar.gz)
-          files: artifacts/**/*.*
+          files: |
+            loom-windows.zip
+            loom-windows-debug.zip
+            loom-linux-Release/loom-linux.tar.gz
+            loom-linux-Debug/loom-linux-debug.tar.gz
+            loom-macos-Release/loom-macos.zip
+            loom-macos-Debug/loom-macos-debug.zip

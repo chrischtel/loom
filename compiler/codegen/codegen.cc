@@ -1731,13 +1731,12 @@ llvm::Value* CodeGen::codegen(IfStmtNode& node) {
   // Generate condition
   llvm::Value* condition_val = codegen(*node.condition);
   if (!condition_val) return nullptr;
-
   // Get current function
-  llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+  llvm::Function* parent_function = builder->GetInsertBlock()->getParent();
 
   // Create basic blocks
   llvm::BasicBlock* then_block =
-      llvm::BasicBlock::Create(*context, "if.then", current_function);
+      llvm::BasicBlock::Create(*context, "if.then", parent_function);
   llvm::BasicBlock* else_block = nullptr;
   llvm::BasicBlock* merge_block = llvm::BasicBlock::Create(*context, "if.end");
 
@@ -1759,10 +1758,9 @@ llvm::Value* CodeGen::codegen(IfStmtNode& node) {
   }
   if (!builder->GetInsertBlock()->getTerminator()) {
     builder->CreateBr(merge_block);
-  }
-  // Generate else block (if present)
+  }  // Generate else block (if present)
   if (else_block) {
-    else_block->insertInto(current_function);
+    else_block->insertInto(parent_function);
     builder->SetInsertPoint(else_block);
     for (const auto& stmt : node.else_body) {
       codegen(*stmt);
@@ -1773,7 +1771,7 @@ llvm::Value* CodeGen::codegen(IfStmtNode& node) {
   }
 
   // Continue with merge block
-  merge_block->insertInto(current_function);
+  merge_block->insertInto(parent_function);
   builder->SetInsertPoint(merge_block);
   return nullptr;  // If statements don't return values
 }
@@ -1782,11 +1780,11 @@ llvm::Value* CodeGen::codegen(WhileStmtNode& node) {
   std::cout << "[CodeGen] Generating WhileStmtNode" << std::endl;
 
   // Get current function
-  llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+  llvm::Function* parent_func = builder->GetInsertBlock()->getParent();
 
   // Create basic blocks
   llvm::BasicBlock* header_block =
-      llvm::BasicBlock::Create(*context, "loop.header", current_function);
+      llvm::BasicBlock::Create(*context, "loop.header", parent_func);
 
   // Body block (ohne function parameter, wird später eingefügt):
   llvm::BasicBlock* body_block =
@@ -1806,9 +1804,8 @@ llvm::Value* CodeGen::codegen(WhileStmtNode& node) {
 
   // Conditional Branch: wenn true → body, wenn false → exit
   builder->CreateCondBr(condition_val, body_block, exit_block);
-
   // 3. Body - Statements ausführen und zurück zum Header
-  body_block->insertInto(current_function);
+  body_block->insertInto(parent_func);
   builder->SetInsertPoint(body_block);
 
   // Führe alle Statements im Body aus
@@ -1822,7 +1819,7 @@ llvm::Value* CodeGen::codegen(WhileStmtNode& node) {
   }
 
   // 4. Exit - Nach der Schleife weitermachen
-  exit_block->insertInto(current_function);
+  exit_block->insertInto(parent_func);
   builder->SetInsertPoint(exit_block);
 
   return nullptr;  // While statements don't return values
@@ -2189,14 +2186,12 @@ llvm::Value* CodeGen::codegen(BuiltinCallExpr& node) {
       // Convert to i8* if needed
       if (!strPtr->getType()->isPointerTy()) {
         throw std::runtime_error("$$strlen expects a string pointer argument");
-      }
-
-      // Create a basic block for the loop
-      llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+      }      // Create a basic block for the loop
+      llvm::Function* parent_func = builder->GetInsertBlock()->getParent();
       llvm::BasicBlock* loop_block =
-          llvm::BasicBlock::Create(*context, "strlen.loop", current_function);
+          llvm::BasicBlock::Create(*context, "strlen.loop", parent_func);
       llvm::BasicBlock* end_block =
-          llvm::BasicBlock::Create(*context, "strlen.end", current_function);
+          llvm::BasicBlock::Create(*context, "strlen.end", parent_func);
 
       // Initialize counter
       llvm::Value* counter =
@@ -2313,9 +2308,8 @@ bool CodeGen::compileToObjectFile(const std::string& filename) const {
 
   std::cout << "[CodeGen] Using target triple: " << targetTripleStr
             << std::endl;
-
   llvm::Triple targetTriple(targetTripleStr);
-  module->setTargetTriple(targetTriple);
+  module->setTargetTriple(targetTriple.getTriple());
   std::string error;
   auto target = llvm::TargetRegistry::lookupTarget(targetTripleStr, error);
 
@@ -2327,8 +2321,7 @@ bool CodeGen::compileToObjectFile(const std::string& filename) const {
   auto features = "";
 
   llvm::TargetOptions opt;
-  auto relocationModel = llvm::Reloc::PIC_;
-  auto targetMachine = target->createTargetMachine(targetTriple, CPU, features,
+  auto relocationModel = llvm::Reloc::PIC_;  auto targetMachine = target->createTargetMachine(targetTriple.getTriple(), CPU, features,
                                                    opt, relocationModel);
 
   module->setDataLayout(targetMachine->createDataLayout());
@@ -2831,13 +2824,12 @@ llvm::Value* CodeGen::codegen(MemberAccessExpr& node) {
 
 llvm::Value* CodeGen::codegen(ForStmtNode& node) {
   std::cout << "[CodeGen] Generating ForStmtNode" << std::endl;
-
   // Get current function
-  llvm::Function* current_function = builder->GetInsertBlock()->getParent();
+  llvm::Function* parent_func = builder->GetInsertBlock()->getParent();
 
   // Create basic blocks for the for loop
   llvm::BasicBlock* init_block =
-      llvm::BasicBlock::Create(*context, "for.init", current_function);
+      llvm::BasicBlock::Create(*context, "for.init", parent_func);
   llvm::BasicBlock* condition_block =
       llvm::BasicBlock::Create(*context, "for.condition");
   llvm::BasicBlock* body_block = llvm::BasicBlock::Create(*context, "for.body");

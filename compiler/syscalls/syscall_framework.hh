@@ -67,9 +67,8 @@ class SyscallFramework {
  public:
   SyscallFramework(llvm::LLVMContext* context, llvm::IRBuilder<>* builder,
                    llvm::Module* module, const SyscallConfig& config = {});
-
   // Configuration management
-  void setConfig(const SyscallConfig& config) { this->config = config; }
+  void setConfig(const SyscallConfig& new_config) { this->config = new_config; }
   const SyscallConfig& getConfig() const { return config; }
 
   // Main syscall generation interface
