@@ -30,7 +30,7 @@ jobs:
       - name: Install LLVM and Clang
         run: |
           choco install llvm --version=18.1.8 -y
-          echo "C:\Program Files\LLVM\bin" >> %GITHUB_PATH%
+          echo C:\Program Files\LLVM\bin>> %GITHUB_PATH%
 
       - name: CMake Configure
         run: |
@@ -117,38 +117,49 @@ jobs:
 
       - name: Install Clang ${{matrix.llvm_version}}
         run: |
+          # Remove any existing LLVM to avoid conflicts
+          sudo apt-get remove -y llvm* clang* || true
+          sudo apt-get autoremove -y
+          
+          # Add LLVM repository
           wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          if [[ "${{matrix.llvm_version}}" < 18 ]]; then
+          if [[ "${{matrix.llvm_version}}" < "${{env.LLVM_DEV_VERSION}}" ]]; then
             sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${{matrix.llvm_version}} main"
-            sudo apt-get update
-            sudo apt-get install -y -t llvm-toolchain-jammy-${{matrix.llvm_version}} \
-              clang-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}}-dev \
-              lld-${{matrix.llvm_version}} liblld-${{matrix.llvm_version}}-dev
           else
-            if [[ "${{matrix.llvm_version}}" < "${{env.LLVM_DEV_VERSION}}" ]]; then
-              sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${{matrix.llvm_version}} main"
-              sudo apt-get update
-              sudo apt-get install -y -t llvm-toolchain-jammy-${{matrix.llvm_version}} \
-                clang-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}}-dev \
-                lld-${{matrix.llvm_version}} liblld-${{matrix.llvm_version}}-dev
-            else
-              sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main"
-              sudo apt-get update
-              sudo apt-get install -y -t llvm-toolchain-jammy \
-                clang-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}} llvm-${{matrix.llvm_version}}-dev \
-                lld-${{matrix.llvm_version}} liblld-${{matrix.llvm_version}}-dev
-            fi
+            sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main"
           fi
-
+          
+          sudo apt-get update
+          
+          # Install LLVM with all necessary components
+          sudo apt-get install -y \
+            clang-${{matrix.llvm_version}} \
+            llvm-${{matrix.llvm_version}} \
+            llvm-${{matrix.llvm_version}}-dev \
+            llvm-${{matrix.llvm_version}}-tools \
+            lld-${{matrix.llvm_version}} \
+            liblld-${{matrix.llvm_version}}-dev \
+            llvm-${{matrix.llvm_version}}-runtime
+          
+          # Set up alternatives to make this version default
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-${{matrix.llvm_version}} 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-${{matrix.llvm_version}} 100
+          sudo update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-${{matrix.llvm_version}} 100
+          
+          # Verify installation
+          clang-${{matrix.llvm_version}} --version
+          llvm-config-${{matrix.llvm_version}} --version      
       - name: CMake Configure
         run: |
           export CC=clang-${{matrix.llvm_version}}
           export CXX=clang++-${{matrix.llvm_version}}
+          export LLVM_DIR=/usr/lib/llvm-${{matrix.llvm_version}}/lib/cmake/llvm
           cmake -B build \
                 -G Ninja \
                 -DCMAKE_BUILD_TYPE=${{matrix.build_type}} \
                 -DCMAKE_C_COMPILER=clang-${{matrix.llvm_version}} \
                 -DCMAKE_CXX_COMPILER=clang++-${{matrix.llvm_version}} \
+                -DLLVM_DIR=/usr/lib/llvm-${{matrix.llvm_version}}/lib/cmake/llvm \
                 -DLOOM_USE_LLVM=ON \
                 -DLOOM_BUILD_TESTING=ON \
                 -DLOOM_BUILD_EXAMPLES=ON
